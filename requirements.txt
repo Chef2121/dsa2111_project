@@ -1,0 +1,20 @@
+# Radview runtime dependencies (versions the project was developed and tested with).
+# PyTorch: in Docker the CPU-only wheel is installed from download.pytorch.org (see Dockerfile).
+pandas==2.3.1
+numpy==1.26.4
+pyarrow==20.0.0
+scikit-learn==1.6.1
+lightgbm==4.7.0
+shap==0.49.1
+torch==2.7.0
+transformers==4.52.3
+huggingface_hub==0.31.2
+langgraph==0.4.8
+anthropic==0.52.0
+fastapi==0.115.12
+uvicorn==0.34.2
+pydantic==2.11.4
+streamlit==1.46.0
+altair==5.5.0
+requests==2.32.3
+joblib==1.5.0
