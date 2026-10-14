@@ -11,6 +11,11 @@ looks *forward*:
 The significance condition stops small-sample noise (regression to the mean
 after a lucky month) from being labelled as a decline.
 
+Market-relative features compare a restaurant with the median restaurant in
+the same city in the *same* month (a cross-section at t, so still leak-free):
+being 10 points above the market on service complaints means more than a raw
+rate that may simply reflect the whole market's mood.
+
 Feature groups (used to build the baselines):
     RATING_FEATURES    - rating level / trend / volume       -> "rating-trend" baseline
     SENTIMENT_FEATURES - + overall (aspect-agnostic) negativity -> "sentiment" baseline
@@ -25,10 +30,11 @@ from radview.config import (ASPECTS, DECLINE_MIN_Z, DECLINE_THRESHOLD, HORIZON_M
                             REFERENCE_MONTHS)
 
 RATING_FEATURES = ["rating_1m", "rating_3m", "rating_6m", "rating_cum", "rating_3m_vs_prev6m", "rating_slope_6m",
-                   "n_reviews_3m", "review_velocity_ratio", "months_active", "checkins_3m", "checkin_ratio",
-                   "tips_3m"]
+                   "rating_3m_vs_market", "n_reviews_3m", "review_velocity_ratio", "months_active", "checkins_3m",
+                   "checkin_ratio", "tips_3m"]
 SENTIMENT_FEATURES = RATING_FEATURES + ["low_star_share_3m", "any_neg_share_3m", "any_neg_share_change"]
-ASPECT_FEATURES = [f"{a}_{s}" for a in ASPECTS for s in ("neg_rate_3m", "neg_rate_change", "pos_rate_3m", "z", "spike_3m")]
+ASPECT_FEATURES = [f"{a}_{s}" for a in ASPECTS
+                   for s in ("neg_rate_3m", "neg_rate_change", "neg_rate_vs_market", "pos_rate_3m", "z", "spike_3m")]
 ALL_FEATURES = SENTIMENT_FEATURES + ASPECT_FEATURES + ["n_spiking_aspects"]
 
 
@@ -44,7 +50,8 @@ def _slope(y: np.ndarray) -> float:
     return float(np.polyfit(x, y[m], 1)[0])
 
 
-def build_features(panel: pd.DataFrame, trends: pd.DataFrame) -> pd.DataFrame:
+def build_features(panel: pd.DataFrame, trends: pd.DataFrame, cities: pd.Series | None = None) -> pd.DataFrame:
+    """``cities`` maps business_id -> city (market). Without it all restaurants form one market."""
     p = panel.merge(trends, on=["business_id", "month"], how="left").sort_values(["business_id", "month"]).reset_index(drop=True)
     g = p.groupby("business_id", sort=False)
     f = p[["business_id", "month"]].copy()
@@ -88,6 +95,21 @@ def build_features(panel: pd.DataFrame, trends: pd.DataFrame) -> pd.DataFrame:
         f[f"{a}_z"] = p[f"{a}_z"]
         f[f"{a}_spike_3m"] = g[f"{a}_spike"].transform(lambda s: s.rolling(3, min_periods=1).max())
     f["n_spiking_aspects"] = p["n_spiking_aspects"]
+
+    # ---------------- market (same city, same month) comparisons ------------
+    market = f["business_id"].map(cities) if cities is not None else pd.Series("all", index=f.index)
+    market = market.fillna("unknown")
+    active = f["n_reviews_3m"] > 0
+    keys = [market, f["month"]]
+
+    def market_median(col):
+        return f[col].where(active).groupby(keys).transform("median")
+
+    f["market_rating_3m"] = market_median("rating_3m")
+    f["rating_3m_vs_market"] = f["rating_3m"] - f["market_rating_3m"]
+    for a in ASPECTS:
+        f[f"{a}_market_rate"] = market_median(f"{a}_neg_rate_3m")  # kept for attribution / dashboard
+        f[f"{a}_neg_rate_vs_market"] = f[f"{a}_neg_rate_3m"] - f[f"{a}_market_rate"]
 
     # ---------------- forward-looking label ---------------------------------
     def fwd(col):  # sum over months t+1 .. t+HORIZON
