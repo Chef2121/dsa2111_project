@@ -33,13 +33,14 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from radview.config import ASPECTS, LLM_MODEL, OUTPUTS_DIR
+from radview.config import ASPECTS, LLM_MODEL, OUTPUTS_DIR, PLANS_TOP_N
 from radview.m5_agent.playbook import PLAYBOOK, actions_for, detect_sub_themes
 from radview.m5_agent.tools import (STORE, TOOL_SCHEMAS, compare_peers, execute_tool, get_evidence_reviews,
                                     query_metrics, run_forecast)
 from radview.m5_agent.verifier import verify_plan
 
 MAX_ITEMS = 3
+LOW_VOLUME = 10   # fewer recent reviews than this -> plans carry an explicit small-sample caveat
 MAX_ATTEMPTS = 2
 MAX_TOOL_TURNS = 10
 PLANS_DIR = OUTPUTS_DIR / "plans"
@@ -147,8 +148,10 @@ class RuleBasedPlanner:
             themes = detect_sub_themes(a, [e["quote"] for e in ev])
             trend = "rising" if p["change"] > 0.02 else "persistent"
             headline = f"{a.capitalize()} complaints are {trend}" + (" (unusual spike)" if p["spike"] else "")
-            text = (f"{rates['complaint_rate_3m']:.0%} of reviews in the last 3 months complained about {a}, "
-                    f"versus {rates['complaint_rate_prev6m']:.0%} in the six months before")
+            n_recent = state["metrics"]["reviews_3m"]
+            n_complaints = round(rates["complaint_rate_3m"] * n_recent)
+            text = (f"{n_complaints} of {n_recent} reviews in the last 3 months ({rates['complaint_rate_3m']:.0%}) "
+                    f"complained about {a}, versus {rates['complaint_rate_prev6m']:.0%} in the six months before")
             if rates["market_median_rate"] is not None:
                 text += f"; the typical restaurant in your market sits at {rates['market_median_rate']:.0%}"
             claims = [{"type": "metric", "text": text + "."}]
@@ -327,9 +330,12 @@ def finalise(state: PlanState) -> PlanState:
         items.append({
             "aspect": it["aspect"], "priority": p["priority"], "headline": it.get("headline", ""),
             "risk_drop_if_fixed": p["risk_drop_if_fixed"], "star_cost": p["star_cost"], "effort": p["effort"],
-            "why": (f"Fixing it would lower decline risk by about {p['risk_drop_if_fixed']:.0%} (counterfactual); "
-                    f"SHAP contribution {p['shap']:+.2f}; complaint z-score {p['robust_z']:.1f}; "
-                    f"complaint rate change {p['change']:+.0%}."),
+            "relative_risk_drop": round(p["risk_drop_if_fixed"] / fc["risk"], 3) if fc["risk"] else 0.0,
+            "why": ((f"At the market norm the decline risk would be {p['risk_drop_if_fixed'] / fc['risk']:.0%} lower "
+                     f"(counterfactual); " if fc["risk"] and p["risk_drop_if_fixed"] >= 0.005 * fc["risk"] else
+                     "On its own it barely moves the forecast (counterfactual) - ranked for its urgency; ")
+                    + f"SHAP contribution {p['shap']:+.2f}; complaint z-score {p['robust_z']:.1f}; "
+                    f"complaint rate change {p['change']:+.0%}; effort {p['effort']}."),
             "claims": [{k: v for k, v in c.items() if k not in ("reasons", "failed_axes")} for c in kept],
             "actions": it.get("actions", []), "sub_themes": it.get("sub_themes", []),
         })
@@ -337,7 +343,11 @@ def finalise(state: PlanState) -> PlanState:
         it["rank"] = i
     summary = d.get("summary") or (
         f"{biz['name']} has a {fc['risk']:.0%} estimated probability of its rating dropping by 0.3 stars or more over "
-        f"the next 3 months ({fc['risk_level']} risk)." + (f" Address {items[0]['aspect']} first." if items else ""))
+        f"the next 3 months - {fc.get('risk_lift', 1):.1f}x the typical restaurant ({fc['risk_level']} risk)." + (f" Address {items[0]['aspect']} first." if items else ""))
+    n_recent = state["metrics"]["reviews_3m"]
+    if n_recent < LOW_VOLUME:
+        summary += (f" Note: based on only {n_recent} reviews in the last 3 months - treat this as an early signal "
+                    f"and re-check as more reviews arrive.")
     rejected = [{"aspect": it["aspect"], "text": c["text"], "reasons": c["reasons"]}
                 for it in d["items"] for c in it["claims"] if not c["verified"]]
     plan = {"business_id": state["business_id"], "name": biz["name"], "month": fc["month"], "risk": fc["risk"],
@@ -391,10 +401,13 @@ def generate_plan(business_id: str, use_llm: bool | None = None, save: bool = Tr
     return plan
 
 
-def at_risk_restaurants(levels=("high", "medium")) -> list[str]:
+def at_risk_restaurants(levels=("high", "medium"), top_n: int = PLANS_TOP_N) -> list[str]:
+    """Active restaurants in the given risk tiers, plus at least the ``top_n`` riskiest, riskiest first."""
     latest = STORE.risk_latest
     active = STORE.features[(STORE.features["month"] == STORE.latest_month) & (STORE.features["n_reviews_3m"] > 0)]
-    return list(latest[latest["risk_level"].isin(levels) & latest.index.isin(active["business_id"])].index)
+    pool = latest[latest.index.isin(active["business_id"])].sort_values("risk", ascending=False)
+    chosen = pool[pool["risk_level"].isin(levels)].index.union(pool.index[:top_n])
+    return list(pool.index[pool.index.isin(chosen)])
 
 
 def run_batch(levels=("high", "medium"), use_llm: bool | None = None) -> dict:
