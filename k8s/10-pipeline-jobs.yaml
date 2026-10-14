@@ -23,7 +23,8 @@ spec:
             - configMapRef: {name: radview-config}
             - secretRef: {name: radview-secrets, optional: true}
           resources:
-            requests: {cpu: "4", memory: 8Gi}
+            # requests fit a laptop cluster (Docker Desktop ~7 GiB); limits let it burst on bigger nodes
+            requests: {cpu: "2", memory: 3Gi}
             limits: {memory: 12Gi}
           volumeMounts:
             - {name: data, mountPath: /data}
@@ -59,7 +60,7 @@ spec:
                 - configMapRef: {name: radview-config}
                 - secretRef: {name: radview-secrets, optional: true}
               resources:
-                requests: {cpu: "2", memory: 6Gi}
+                requests: {cpu: "1", memory: 2Gi}
                 limits: {memory: 10Gi}
               volumeMounts:
                 - {name: data, mountPath: /data}
