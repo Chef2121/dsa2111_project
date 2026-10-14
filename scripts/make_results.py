@@ -13,7 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / "data" / "work"
 OUT = ROOT / "docs" / "RESULTS.md"
-MODEL_LABELS = {"rating_logreg": "Rating trend · logistic regression", "rating_lgbm": "Rating trend · LightGBM",
+MODEL_LABELS = {"majority": "Majority (base rate)", "current_negativity": "Current negativity (no model)",
+                "rating_logreg": "Rating trend · logistic regression", "rating_lgbm": "Rating trend · LightGBM",
                 "sentiment_lgbm": "Rating + overall sentiment · LightGBM", "radview_lgbm": "Radview features · LightGBM",
                 "radview_gru": "**Radview · PyTorch GRU (ensemble, calibrated)**"}
 
@@ -21,6 +22,11 @@ MODEL_LABELS = {"rating_logreg": "Rating trend · logistic regression", "rating_
 def _load(src: str, name: str):
     f = WORK / src / "outputs" / name
     return json.loads(f.read_text()) if f.exists() else None
+
+
+def _num(v):
+    """Plain number (already in the unit it is shown in), or a dash."""
+    return "–" if v is None else f"{v:g}"
 
 
 def _fmt(v, pct=False):
@@ -71,13 +77,26 @@ def section(src: str) -> list[str]:
         lines += ["### M4 – rating-decline forecasting (out-of-time test)", "",
                   f"Train {sp['train']} · validation {sp['valid']} · test {sp['test']} — "
                   f"{sp['n_test']:,} test business-months, {sp['pos_rate_test']:.1%} positive.", "",
-                  "| Model | AUROC | PR-AUC | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Median lead |",
-                  "|---|---|---|---|---|---|---|"]
+                  "| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Median lead |",
+                  "|---|---|---|---|---|---|---|---|"]
         for k, r in m4["results"].items():
-            ew = r["early_warning"]
-            lines.append(f"| {MODEL_LABELS.get(k, k)} | {r['auroc']:.3f} | {r['pr_auc']:.3f} | "
-                         f"{r['precision_at_10pct']:.3f} | {r['recall_at_10pct']:.3f} | {ew['detected_pct']}% | "
-                         f"{ew['median_lead_months']} mo |")
+            ew = r.get("early_warning") or {}
+            lines.append(f"| {MODEL_LABELS.get(k, k)} | {r['auroc']:.3f} | {r['pr_auc']:.3f} | {_fmt(r.get('brier'))} | "
+                         f"{r['precision_at_10pct']:.3f} | {r['recall_at_10pct']:.3f} | {_num(ew.get('detected_pct'))}% | "
+                         f"{_num(ew.get('median_lead_months'))} mo |")
+        if m4.get("injected_episodes"):
+            lines += ["", "Injected deterioration episodes (synthetic ground truth):", "",
+                      "| Model | Episodes | Detected | Before visible drop | Median lead (months) |", "|---|---|---|---|---|"]
+            for k, r in m4["injected_episodes"].items():
+                lines.append(f"| {MODEL_LABELS.get(k, k)} | {r['episodes']} | {_num(r['detected_pct'])}% | "
+                             f"{_num(r['before_visible_pct'])}% | {_num(r['median_lead_months'])} |")
+        agr = m4.get("attribution_agreement")
+        if agr:
+            lines += ["", f"SHAP vs counterfactual — same top aspect: {_fmt(agr['all'].get('top_aspect_agreement'), True)} "
+                      f"of {agr['all'].get('n')} restaurants ({_fmt(agr['at_risk'].get('top_aspect_agreement'), True)} "
+                      f"of {agr['at_risk'].get('n')} at-risk); mean Spearman {_fmt(agr['all'].get('mean_spearman'))}.",
+                      "Star-impact coefficients (stars per unit complaint rate): " +
+                      ", ".join(f"{a} {c:+.2f}" for a, c in agr["star_impact_coefficients"].items())]
         lines += ["", "Top LightGBM features by mean |SHAP|: " +
                   ", ".join(f"`{k}`" for k in list(m4.get("lgbm_top_features_shap", {}))[:8]), ""]
 
@@ -85,7 +104,21 @@ def section(src: str) -> list[str]:
     if m5:
         lines += ["### M5 – grounded action plans", "",
                   f"{m5['plans']} plans · {m5['claims_verified']}/{m5['claims_total']} drafted claims verified "
-                  f"(groundedness **{_fmt(m5['groundedness'], True)}**) · drafting mode: {m5['modes']}", ""]
+                  f"(groundedness **{_fmt(m5['groundedness'], True)}**) · planners: {m5.get('planners', m5.get('modes'))}", ""]
+    comp = _load(src, "m5_planner_comparison.json")
+    if comp:
+        lines += [f"Planner comparison on the {comp['restaurants']} riskiest restaurants:", "",
+                  "| Planner | Groundedness | Claims | Rejected: citation / quotation / relevance / statistic / substance | Items per plan | Median latency (s) | Tool calls |",
+                  "|---|---|---|---|---|---|---|"]
+        for k, v in comp["planners"].items():
+            f = v["failures_by_axis"]
+            lines.append(f"| {k} | {_fmt(v['groundedness'], True)} | {v['claims_total']} | "
+                         f"{f.get('citation', 0)} / {f.get('quotation', 0)} / {f.get('relevance', 0)} / "
+                         f"{f.get('statistic', 0)} / {f.get('substance', 0)} | {v['mean_items_per_plan']} | "
+                         f"{v['median_latency_s']} | {v['mean_tool_calls']} |")
+        if comp.get("note"):
+            lines += ["", f"_{comp['note']}_"]
+        lines.append("")
     return lines
 
 
