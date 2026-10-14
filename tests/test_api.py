@@ -49,3 +49,16 @@ def test_unknown_restaurant_is_404(client):
 def test_feedback_validation(client):
     bid = client.get("/restaurants").json()[0]["business_id"]
     assert client.post("/feedback", json={"business_id": bid, "usefulness": 9}).status_code == 422
+
+
+def test_alerts_sorted_by_severity(client):
+    rows = client.get("/alerts").json()
+    zs = [r["robust_z"] for r in rows]
+    assert zs == sorted(zs, reverse=True)
+    assert all(r["severity"] in {"warning", "serious", "critical"} for r in rows)
+
+
+def test_analyse_scores_raw_reviews(client):
+    res = client.post("/analyse", json={"texts": ["The food was cold and bland. Our waiter was lovely."]}).json()
+    assert len(res) == 1 and set(res[0]["aspects"]) == {"food", "service", "cleanliness", "price", "ambience"}
+    assert client.post("/analyse", json={"texts": []}).status_code == 422
