@@ -52,7 +52,7 @@ def list_restaurants(active_only: bool = True) -> list[dict]:
     if active_only:
         df = df[df["reviews_3m"] > 0]
     df = df.sort_values("risk", ascending=False)
-    cols = ["business_id", "name", "city", "cuisine", "risk", "risk_level", "rating_3m", "rating_6m", "rating_cum",
+    cols = ["business_id", "name", "city", "cuisine", "risk", "risk_lift", "risk_level", "rating_3m", "rating_6m", "rating_cum",
             "reviews_3m", "top_aspect", "spiking_aspects"] + [c for c in df.columns if c.startswith("attr::")]
     return _clean(df[cols].to_dict(orient="records"))
 

@@ -124,17 +124,21 @@ def page_portfolio():
     left, right = st.columns([3, 2])
     with left:
         st.subheader("Restaurants ranked by decline risk")
-        st.caption("Risk = calibrated probability that the average rating drops ≥0.3★ over the next 3 months. "
+        st.caption("Risk = calibrated probability that the average rating drops ≥0.3★ over the next 3 months; "
+                   "× typical = how many times the typical restaurant's risk (medium ≥ 1.5×, high ≥ 2×). "
                    "Click a row to open the restaurant.")
         table = view.assign(
             level=view["risk_level"].map(lambda lv: STATUS[lv][1]),
             spikes=view["spiking_aspects"].map(lambda s: ", ".join(s) if len(s) else "—"),
-        )[["name", "cuisine", "level", "risk", "rating_3m", "rating_6m", "reviews_3m", "top_aspect", "spikes", "business_id"]]
+        )[["name", "cuisine", "level", "risk", "risk_lift", "rating_3m", "rating_6m", "reviews_3m", "top_aspect", "spikes",
+            "business_id"]]
         event = st.dataframe(
             table, hide_index=True, use_container_width=True, height=460, on_select="rerun", selection_mode="single-row",
             column_config={
                 "name": "Restaurant", "cuisine": "Cuisine", "level": "Level",
-                "risk": st.column_config.ProgressColumn("Decline risk", min_value=0, max_value=1, format="percent"),
+                "risk": st.column_config.ProgressColumn("Decline risk", min_value=0, max_value=float(view["risk"].max() or 1),
+                                                        format="percent"),
+                "risk_lift": st.column_config.NumberColumn("× typical", format="%.1f×"),
                 "rating_3m": st.column_config.NumberColumn("Rating 3 mo", format="%.2f ★"),
                 "rating_6m": st.column_config.NumberColumn("Rating 6 mo", format="%.2f ★"),
                 "reviews_3m": st.column_config.NumberColumn("Reviews 3 mo"),
@@ -145,9 +149,9 @@ def page_portfolio():
     with right:
         st.subheader("Risk distribution")
         hist = alt.Chart(view).mark_bar(color=SERIES[0], cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
-            x=alt.X("risk:Q", bin=alt.Bin(step=0.05), title="Decline risk", axis=alt.Axis(format="%")),
+            x=alt.X("risk:Q", bin=alt.Bin(maxbins=20), title="Decline risk", axis=alt.Axis(format="%")),
             y=alt.Y("count():Q", title="Restaurants"),
-            tooltip=[alt.Tooltip("risk:Q", bin=alt.Bin(step=0.05), title="Risk band", format=".0%"),
+            tooltip=[alt.Tooltip("risk:Q", bin=alt.Bin(maxbins=20), title="Risk band", format=".0%"),
                      alt.Tooltip("count():Q", title="Restaurants")]).properties(height=200)
         chart_or_table(hist, view[["name", "risk"]].sort_values("risk", ascending=False), "hist")
         st.subheader("Main risk driver")
@@ -162,14 +166,20 @@ def page_portfolio():
 
 
 # ================================================================== Restaurant
-def _verdict(info, m, fc) -> str:
-    """One plain-English sentence answering 'am I in trouble, and why?'."""
-    top = max(ASPECTS, key=lambda a: fc.get("counterfactual_risk_drop", {}).get(a, 0) + fc["attributions"].get(a, 0))
+def _verdict(info, m, fc, plan: dict | None = None) -> str:
+    """One plain-English sentence answering 'am I in trouble, and why?'.
+
+    Names the same aspect the agent ranks first, so the verdict and the plan never disagree."""
+    if plan and plan.get("items"):
+        top = plan["items"][0]["aspect"]
+    else:
+        top = max(ASPECTS, key=lambda a: fc.get("counterfactual_risk_drop", {}).get(a, 0) + fc["attributions"].get(a, 0))
     am = m["aspects"][top]
     market = (f", against a market median of {pct(am['market_median_rate'])}"
               if am.get("market_median_rate") is not None else "")
     return (f"**{info['name']}** has a **{pct(fc['risk'])}** chance its rating falls by 0.3★ or more over the next "
-            f"3 months. The biggest driver is **{top}** — {pct(am['complaint_rate_3m'])} of recent reviews complain "
+            f"3 months — **{fc.get('risk_lift', 1):.1f}×** the typical restaurant ({pct(fc.get('base_rate'))}). "
+            f"Fix **{top}** first — {pct(am['complaint_rate_3m'])} of recent reviews complain "
             f"about it{market}.")
 
 
@@ -197,8 +207,8 @@ def _plan_section(bid: str):
             badges = []
             if it.get("star_cost"):
                 badges.append(f"≈{it['star_cost']:.2f}★ cost vs market")
-            if it.get("risk_drop_if_fixed"):
-                badges.append(f"−{it['risk_drop_if_fixed']:.0%} risk if fixed")
+            if (it.get("relative_risk_drop") or 0) >= 0.01:
+                badges.append(f"fixing cuts risk by {it['relative_risk_drop']:.0%}")
             badges.append(EFFORT_LABEL.get(it.get("effort"), ""))
             badge_html = " ".join(f"<span style='font-size:0.75rem;background:{SOFT};border-radius:8px;padding:2px 8px;"
                                   f"margin-left:4px'>{b}</span>" for b in badges if b)
@@ -255,10 +265,13 @@ def page_restaurant():
         st.markdown(f"{status_badge(fc['risk_level'])} &nbsp; <span style='color:{MUTED};font-size:0.85rem'>"
                     f"{info['cuisine']} · {info['address']}, {info['city']} · analysis for {m['month']}</span>",
                     unsafe_allow_html=True)
-        st.markdown(_verdict(info, m, fc))
+        with st.spinner("Running the agent…"):
+            plan = load("plan", bid)
+        st.markdown(_verdict(info, m, fc, plan))
     spikes = [a for a, v in m["aspects"].items() if v["spike"]]
     k = st.columns(4)
-    k[0].metric("Chance rating falls", pct(fc["risk"]), help="next 3 months, ≥0.3★, calibrated probability")
+    k[0].metric("Chance rating falls", pct(fc["risk"]), delta=f"{fc.get('risk_lift', 1):.1f}× typical", delta_color="off",
+                help="next 3 months, ≥0.3★, calibrated probability; typical restaurant = training base rate")
     delta = None if m["rating_3m"] is None or m["rating_6m"] is None else round(m["rating_3m"] - m["rating_6m"], 2)
     k[1].metric("Average rating (3 mo)", f"{m['rating_3m']:.2f} ★" if m["rating_3m"] else "–",
                 delta=f"{delta:+.2f} vs 6 mo" if delta is not None else None)
@@ -360,9 +373,11 @@ def page_restaurant():
                 x=alt.X("date:T", title=None), y=alt.Y("risk:Q", title="Risk", axis=alt.Axis(format="%"))),
             alt.Chart(tl).mark_line(strokeWidth=2, color="#d03b3b").encode(
                 x="date:T", y="risk:Q", tooltip=["month:N", alt.Tooltip("risk:Q", format=".0%")]),
-            alt.Chart(pd.DataFrame({"y": [0.15, 0.30]})).mark_rule(strokeDash=[4, 4], color=MUTED).encode(y="y:Q"),
+            alt.Chart(pd.DataFrame({"y": [1.5 * fc["base_rate"], 2.0 * fc["base_rate"]]})).mark_rule(
+                strokeDash=[4, 4], color=MUTED).encode(y="y:Q"),
         ).properties(height=220)
-        st.caption("Predicted decline risk each month; dashed lines mark the medium / high thresholds.")
+        st.caption("Predicted decline risk each month; dashed lines mark the medium (1.5×) / high (2×) "
+                   "thresholds relative to the typical restaurant.")
         chart_or_table(risk, tl[["month", "risk", "decline"]], "risk")
     with tab_peer:
         st.markdown(f"**Complaint rate vs. peers** — {peers['basis']} ({peers['n_peers']} with recent reviews)")
