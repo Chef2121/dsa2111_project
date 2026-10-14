@@ -31,7 +31,13 @@ before the owner sees it.
 | **M5** Agent | **LangGraph** workflow. **Claude runs its own tool-calling loop** (`query_metrics`, `run_forecast`, `get_evidence_reviews`, `compare_peers`) and submits a structured plan; a **rule-based planner** is the offline fallback *and* the baseline. A mechanical **verifier** checks every claim on five axes (citation, quotation, relevance, statistic, substance); an **adversarial planner** proves it rejects fabrications. Priority = impact (SHAP + counterfactual) and urgency, divided by the effort of the fix. | [`radview/m5_agent/`](radview/m5_agent/) |
 | **M6** Serving | FastAPI REST API + Streamlit dashboard (light/dark), one Docker image with a pytest gate, Kubernetes Job / CronJob / Deployments. | [`radview/api/`](radview/api/), [`dashboard/`](dashboard/), [`k8s/`](k8s/) |
 
-Results from the latest run are in **[docs/RESULTS.md](docs/RESULTS.md)** (regenerate with `python scripts/make_results.py`).
+Results from the latest run are in **[docs/RESULTS.md](docs/RESULTS.md)** (regenerate with `python scripts/make_results.py`);
+**[docs/FINDINGS.md](docs/FINDINGS.md)** interprets them — including what did *not* work on real data.
+
+**Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best aspect model on human-labelled
+SemEval-2014 (macro-F1 0.737, complaint-F1 0.567); the agent's 53 plans are 100% verified while an adversarial planner is
+100% rejected; but a rating-trend logistic regression (AUROC 0.738) edges out the PyTorch GRU (0.727) at forecasting
+declines, and complaint spikes do not anticipate declines at monthly granularity — see FINDINGS for why.
 
 ---
 
