@@ -16,6 +16,10 @@ app = FastAPI(title="Radview API", version=__version__,
                           "aspect trends and evidence-backed action plans.")
 
 
+class ReviewBatch(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=200, description="Raw review texts to analyse")
+
+
 class Feedback(BaseModel):
     business_id: str
     usefulness: int = Field(ge=1, le=5, description="How useful was the action plan? 1-5")
@@ -69,6 +73,18 @@ def plan(business_id: str, refresh: bool = False, llm: bool | None = None):
     """Evidence-backed action plan (cached; ``refresh=true`` re-runs the agent)."""
     _known(business_id)
     return service.plan(business_id, refresh=refresh, use_llm=llm)
+
+
+@app.get("/alerts")
+def alerts(min_z: float = 0.0):
+    """Active complaint spikes across all restaurants (latest month), most severe first."""
+    return service.alerts(min_z)
+
+
+@app.post("/analyse")
+def analyse(batch: ReviewBatch):
+    """Aspect-level sentiment for raw review texts, with the complaint sentence per aspect."""
+    return service.analyse(batch.texts)
 
 
 @app.get("/evaluation")

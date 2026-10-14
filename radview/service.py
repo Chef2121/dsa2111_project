@@ -70,7 +70,9 @@ def timeline(business_id: str) -> list[dict]:
     t = STORE.trends[STORE.trends["business_id"] == business_id]
     cols = ["month"] + [f"{a}_{s}" for a in ASPECTS for s in ("rate", "z", "spike")] + ["rating_alarm"]
     r = STORE.risk_history[STORE.risk_history["business_id"] == business_id][["month", "risk", "decline", "rating_3m"]]
-    df = p.merge(t[cols], on="month").merge(r, on="month", how="left")
+    fcols = ["month"] + [f"{a}_{s}" for a in ASPECTS for s in ("neg_rate_3m", "market_rate")]
+    f = STORE.features[STORE.features["business_id"] == business_id][fcols]
+    df = p.merge(t[cols], on="month").merge(r, on="month", how="left").merge(f, on="month", how="left")
     return _clean(df.to_dict(orient="records"))
 
 
@@ -98,6 +100,8 @@ def evaluation() -> dict:
     for key in ("m2", "m3", "m4", "m5"):
         f = OUTPUTS_DIR / f"{key}_evaluation.json"
         out[key] = json.loads(f.read_text()) if f.exists() else None
+    comp = OUTPUTS_DIR / "m5_planner_comparison.json"
+    out["m5_comparison"] = json.loads(comp.read_text()) if comp.exists() else None
     out["feedback"] = feedback_summary()
     return _clean(out)
 
@@ -140,3 +144,50 @@ def feedback_summary() -> dict:
         return {"n": 0, "mean_usefulness": None}
     fb = pd.read_csv(FEEDBACK_FILE)
     return {"n": int(len(fb)), "mean_usefulness": round(float(fb["usefulness"].mean()), 2) if len(fb) else None}
+
+
+def alerts(min_z: float = 0.0) -> list[dict]:
+    """Live complaint-spike alerts (M3) for the latest month, most severe first."""
+    t = STORE.trends[STORE.trends["month"] == STORE.latest_month].set_index("business_id")
+    f = STORE.features[STORE.features["month"] == STORE.latest_month].set_index("business_id")
+    names = STORE.businesses["name"]
+    out = []
+    for bid, row in t.iterrows():
+        for a in ASPECTS:
+            if not row[f"{a}_spike"] or row[f"{a}_z"] < min_z:
+                continue
+            z = float(row[f"{a}_z"])
+            out.append({"business_id": bid, "name": names.get(bid, bid), "aspect": a, "robust_z": round(z, 2),
+                        "complaint_rate_3m": float(f.loc[bid, f"{a}_neg_rate_3m"]),
+                        "market_median_rate": float(f.loc[bid, f"{a}_market_rate"]),
+                        "severity": "critical" if z >= 5 else "serious" if z >= 3.5 else "warning",
+                        "risk": float(STORE.risk_latest.loc[bid, "risk"]) if bid in STORE.risk_latest.index else None})
+    return _clean(sorted(out, key=lambda r: -r["robust_z"]))
+
+
+def analyse(texts: list[str]) -> list[dict]:
+    """Score raw review texts on the fly with the production M2 model (e.g. reviews not yet ingested).
+
+    Returns per-review aspect labels and, for each complaint, the sentence that carries it.
+    """
+    from radview.lexicon import split_sentences
+    from radview.m5_agent.tools import aspect_model
+
+    model = aspect_model()
+    proba = model.predict_proba(texts, [float("nan")] * len(texts))
+    names = {0: "not mentioned", LABEL_POS: "positive", LABEL_NEG: "negative"}
+    out = []
+    for text, p in zip(texts, proba):
+        labels = {a: names[int(p[i].argmax())] for i, a in enumerate(ASPECTS)}
+        evidence = {}
+        complaints = [a for a, lab in labels.items() if lab == "negative"]
+        if complaints:
+            sents = split_sentences(text) or [text]
+            sp = model.predict_proba(sents, [float("nan")] * len(sents))
+            for a in complaints:
+                i = ASPECTS.index(a)
+                evidence[a] = sents[int(sp[:, i, LABEL_NEG].argmax())]
+        out.append({"text": text, "aspects": labels,
+                    "confidence": {a: round(float(p[i].max()), 3) for i, a in enumerate(ASPECTS)},
+                    "complaint_sentences": evidence})
+    return out
