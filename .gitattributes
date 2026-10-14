@@ -1,0 +1,3 @@
+# Keep LF line endings in the repo (Dockerfile, YAML and shell need them inside Linux containers)
+* text=auto eol=lf
+*.docx binary
