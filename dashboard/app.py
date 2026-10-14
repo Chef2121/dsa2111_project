@@ -367,9 +367,10 @@ def page_models():
         if m4.get("lgbm_top_features_shap"):
             imp = pd.DataFrame(list(m4["lgbm_top_features_shap"].items()), columns=["feature", "mean |SHAP|"])
             st.altair_chart(alt.Chart(imp).mark_bar(color="#2a78d6", cornerRadiusEnd=4, height=12).encode(
-                y=alt.Y("feature:N", sort="-x", title=None), x=alt.X("mean |SHAP|:Q"),
-                tooltip=["feature:N", alt.Tooltip("mean |SHAP|:Q", format=".4f")]
-            ).properties(title="Top features (LightGBM, mean |SHAP| on test)", height=320), use_container_width=True)
+                y=alt.Y("feature:N", sort="-x", title=None, axis=alt.Axis(labelOverlap=False, labelLimit=220)),
+                x=alt.X("mean |SHAP|:Q"), tooltip=["feature:N", alt.Tooltip("mean |SHAP|:Q", format=".4f")]
+            ).properties(title="Top features (LightGBM, mean |SHAP| on test)", height=24 * len(imp)),
+                use_container_width=True)
 
     st.header("M5 · Grounded action plans")
     m5, fb = ev.get("m5"), ev.get("feedback", {})
