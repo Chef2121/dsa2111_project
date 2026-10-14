@@ -116,7 +116,8 @@ def run_forecast(business_id: str, store: Store = STORE) -> dict:
     def group(prefix):
         return {c.split("::", 1)[1]: round(float(r[c]), 4) for c in r.index if c.startswith(prefix)}
     return {"business_id": business_id, "month": r["month"], "risk": round(float(r["risk"]), 4),
-            "risk_level": r["risk_level"], "attributions": group("attr::"),
+            "risk_level": r["risk_level"], "base_rate": round(float(r["base_rate"]), 4),
+            "risk_lift": round(float(r["risk_lift"]), 2), "attributions": group("attr::"),
             "counterfactual_risk_drop": group("cf::"), "star_cost": group("starcost::"),
             "top_features": json.loads(r["top_features"])}
 

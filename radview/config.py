@@ -68,8 +68,12 @@ MIN_REVIEWS_PAST = 6
 # are the test period, the VALID_MONTHS before them validation, the rest training.
 TEST_MONTHS = 18
 VALID_MONTHS = 6
-RISK_HIGH = 0.30            # calibrated probability above which a restaurant is "high risk"
-RISK_MEDIUM = 0.15
+# Risk tiers are defined as *lift* over the base rate of declines in the training data, not as
+# fixed probabilities: real declines are rare (~6% of restaurant-months on Yelp), so a calibrated
+# model almost never outputs 30%, yet 2x the typical restaurant's risk is a meaningful warning.
+RISK_MEDIUM_LIFT = 1.5
+RISK_HIGH_LIFT = 2.0
+PLANS_TOP_N = 20               # the agent always covers at least the N riskiest active restaurants
 
 # --------------------------------------------------------------------------
 # M2 - transformer

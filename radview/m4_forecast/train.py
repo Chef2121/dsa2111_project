@@ -41,8 +41,8 @@ from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_s
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from radview.config import (ASPECTS, MODELS_DIR, OUTPUTS_DIR, PROCESSED_DIR, RANDOM_SEED, RAW_DIR, RISK_HIGH,
-                            RISK_MEDIUM, TEST_MONTHS, VALID_MONTHS)
+from radview.config import (ASPECTS, MODELS_DIR, OUTPUTS_DIR, PROCESSED_DIR, RANDOM_SEED, RAW_DIR, RISK_HIGH_LIFT,
+                            RISK_MEDIUM_LIFT, TEST_MONTHS, VALID_MONTHS)
 from radview.m4_forecast.attribution import (counterfactual_attribution, fit_star_impact, method_agreement,
                                              star_costs)
 from radview.m4_forecast.features import ALL_FEATURES, RATING_FEATURES, SENTIMENT_FEATURES
@@ -237,7 +237,9 @@ def run(epochs: int = 30) -> dict:
     lgbm_importance = pd.Series(np.abs(sv).mean(0), index=ALL_FEATURES).sort_values(ascending=False)
 
     # ---------------- persist --------------------------------------------------
+    base_rate = float(y[rows_tr].mean())
     torch.save({"state_dict": gru.state_dict(), "n_seeds": N_SEEDS, "calibration": calibs["radview_gru"],
+                "base_rate": base_rate,
                 "features": ALL_FEATURES, "mean": mean.to_dict(), "std": std.to_dict()}, MODELS_DIR / "m4_gru.pt")
     lgbm_models["radview_lgbm"].booster_.save_model(str(MODELS_DIR / "m4_lgbm.txt"))
     tp = test_frame[["business_id", "month", "decline"]].copy()
@@ -250,7 +252,7 @@ def run(epochs: int = 30) -> dict:
     report = {"split": split, "results": results, "injected_episodes": episodes, "gru_training": train_info,
               "calibration": calibs["radview_gru"], "primary_model": "radview_gru",
               "lgbm_top_features_shap": lgbm_importance.head(15).round(4).to_dict()}
-    agreement = score(feat, gru, data, rows_tr, calibs["radview_gru"])
+    agreement = score(feat, gru, data, rows_tr, calibs["radview_gru"], base_rate)
     report["attribution_agreement"] = agreement
     (OUTPUTS_DIR / "m4_evaluation.json").write_text(json.dumps(report, indent=2))
     return report
@@ -260,7 +262,7 @@ def run(epochs: int = 30) -> dict:
 # Scoring and explanation
 # --------------------------------------------------------------------------
 def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarray,
-          calib: tuple[float, float]) -> dict:
+          calib: tuple[float, float], base_rate: float) -> dict:
     """Risk for every business-month; for each restaurant's latest month also SHAP, counterfactual
     attribution and star cost per aspect. Returns SHAP-vs-counterfactual agreement statistics."""
     all_rows = np.arange(len(feat))
@@ -275,7 +277,10 @@ def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarr
     cols += [f"{a}_{s}" for a in ASPECTS for s in ("neg_rate_3m", "market_rate")]
     latest = feat.loc[latest_rows, cols].reset_index(drop=True)
     latest["risk"] = hist["risk"].to_numpy()[latest_rows]
-    latest["risk_level"] = np.select([latest["risk"] >= RISK_HIGH, latest["risk"] >= RISK_MEDIUM], ["high", "medium"], "low")
+    latest["base_rate"] = base_rate
+    latest["risk_lift"] = latest["risk"] / base_rate
+    latest["risk_level"] = np.select([latest["risk_lift"] >= RISK_HIGH_LIFT, latest["risk_lift"] >= RISK_MEDIUM_LIFT],
+                                     ["high", "medium"], "low")
 
     # SHAP (expected gradients) -> per feature group
     attr_df = pd.DataFrame(explain(gru, data, latest_rows, background_rows), columns=ALL_FEATURES)
@@ -319,7 +324,9 @@ def score_saved() -> dict:
     gru.load_state_dict(ckpt["state_dict"])
     gru.to(DEVICE).eval()
     rng = np.random.default_rng(RANDOM_SEED)
-    return score(feat, gru, data, rng.choice(len(feat), min(5000, len(feat)), replace=False), tuple(ckpt["calibration"]))
+    base_rate = ckpt.get("base_rate", float(feat["decline"].mean()))
+    return score(feat, gru, data, rng.choice(len(feat), min(5000, len(feat)), replace=False),
+                 tuple(ckpt["calibration"]), base_rate)
 
 
 if __name__ == "__main__":
