@@ -17,7 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm 
 
 # CPU-only PyTorch keeps the image ~1.5 GB smaller than the default CUDA build.
 COPY requirements.txt .
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.0 \
+# PyPI stays the primary index (torch's own deps resolve there); "+cpu" pins the CPU wheel,
+# which also satisfies the plain torch==2.7.0 pin in requirements.txt.
+RUN pip install --upgrade pip \
+ && pip install --extra-index-url https://download.pytorch.org/whl/cpu torch==2.7.0+cpu \
  && pip install -r requirements.txt
 
 # Bake the DistilBERT base weights into the image so pods start without internet access.
