@@ -1,0 +1,44 @@
+# Namespace, shared configuration and persistent storage for Radview.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: radview
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: radview-config
+  namespace: radview
+data:
+  RADVIEW_DATA_DIR: /data
+  # "yelp" needs the Yelp JSON files under /data/yelp on the volume (see README);
+  # "synthetic" generates a Yelp-format sample automatically.
+  RADVIEW_SOURCE: synthetic
+  RADVIEW_CITY: Philadelphia
+  RADVIEW_MAX_RESTAURANTS: "400"
+  RADVIEW_START_DATE: "2016-01-01"
+---
+# Optional: enables Claude-drafted action plans in M5. Create with
+#   kubectl -n radview create secret generic radview-secrets --from-literal=ANTHROPIC_API_KEY=...
+# Without it the agent uses its deterministic planner.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: radview-secrets
+  namespace: radview
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: ""
+---
+# One volume shared by the pipeline jobs (writers) and the API (reader).
+# On a multi-node cluster use a ReadWriteMany storage class (e.g. EFS / Filestore / Azure Files).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radview-data
+  namespace: radview
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi

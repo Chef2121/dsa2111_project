@@ -1,0 +1,40 @@
+# Local container deployment.
+#   docker compose run --rm pipeline          # 1) build data + models into ./data (once)
+#   docker compose up -d api dashboard        # 2) serve: API :8000, dashboard :8501
+# Set RADVIEW_SOURCE=synthetic to run without the Yelp files.
+x-common: &common
+  build: .
+  image: radview:latest
+  volumes:
+    - ./data:/data
+  environment:
+    RADVIEW_DATA_DIR: /data
+    RADVIEW_SOURCE: ${RADVIEW_SOURCE:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+services:
+  pipeline:
+    <<: *common
+    command: ["python", "-m", "radview.pipeline", "--mode", "full"]
+    profiles: ["jobs"]
+
+  api:
+    <<: *common
+    command: ["uvicorn", "radview.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    <<: *common
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    ports: ["8501:8501"]
+    environment:
+      RADVIEW_DATA_DIR: /data
+      RADVIEW_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy

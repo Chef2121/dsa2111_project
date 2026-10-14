@@ -1,0 +1,68 @@
+# M1-M5 batch workloads.
+#   radview-train : one-off Job - ingest, train/evaluate all models, score, generate plans
+#   radview-rescore: weekly CronJob - ingest new data, re-score with saved models, refresh plans
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: radview-train
+  namespace: radview
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels: {app: radview, role: pipeline}
+    spec:
+      restartPolicy: Never
+      securityContext: {fsGroup: 1000}
+      containers:
+        - name: pipeline
+          image: radview:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "radview.pipeline", "--mode", "full"]
+          envFrom:
+            - configMapRef: {name: radview-config}
+            - secretRef: {name: radview-secrets, optional: true}
+          resources:
+            requests: {cpu: "4", memory: 8Gi}
+            limits: {memory: 12Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: radview-data}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: radview-rescore
+  namespace: radview
+spec:
+  schedule: "0 3 * * 1"          # every Monday 03:00 - flags high-risk restaurants and triggers the agent
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: {app: radview, role: rescore}
+        spec:
+          restartPolicy: Never
+          securityContext: {fsGroup: 1000}
+          containers:
+            - name: rescore
+              image: radview:latest
+              imagePullPolicy: IfNotPresent
+              command: ["python", "-m", "radview.pipeline", "--mode", "rescore"]
+              envFrom:
+                - configMapRef: {name: radview-config}
+                - secretRef: {name: radview-secrets, optional: true}
+              resources:
+                requests: {cpu: "2", memory: 6Gi}
+                limits: {memory: 10Gi}
+              volumeMounts:
+                - {name: data, mountPath: /data}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: radview-data}

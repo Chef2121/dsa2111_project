@@ -1,0 +1,88 @@
+# M6 serving layer: REST API + owner dashboard.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radview-api
+  namespace: radview
+spec:
+  replicas: 1                     # raise with a ReadWriteMany volume
+  selector:
+    matchLabels: {app: radview, role: api}
+  template:
+    metadata:
+      labels: {app: radview, role: api}
+    spec:
+      securityContext: {fsGroup: 1000}
+      containers:
+        - name: api
+          image: radview:latest
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "radview.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports: [{containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: radview-config}
+            - secretRef: {name: radview-secrets, optional: true}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 500m, memory: 3Gi}
+            limits: {memory: 6Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: radview-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radview-api
+  namespace: radview
+spec:
+  selector: {app: radview, role: api}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radview-dashboard
+  namespace: radview
+spec:
+  replicas: 2                     # stateless: reads everything through the API
+  selector:
+    matchLabels: {app: radview, role: dashboard}
+  template:
+    metadata:
+      labels: {app: radview, role: dashboard}
+    spec:
+      containers:
+        - name: dashboard
+          image: radview:latest
+          imagePullPolicy: IfNotPresent
+          command: ["streamlit", "run", "dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+          ports: [{containerPort: 8501}]
+          env:
+            - {name: RADVIEW_API_URL, value: "http://radview-api:8000"}
+          readinessProbe:
+            httpGet: {path: /_stcore/health, port: 8501}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radview-dashboard
+  namespace: radview
+spec:
+  type: LoadBalancer              # use NodePort / port-forward on a local cluster
+  selector: {app: radview, role: dashboard}
+  ports: [{port: 80, targetPort: 8501}]

@@ -1,0 +1,10 @@
+data/
+.git/
+.claude/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+*.docx
+*.pdf
+k8s/
+tests/
