@@ -36,7 +36,7 @@ for _d in (RAW_DIR, PROCESSED_DIR, MODELS_DIR, OUTPUTS_DIR, LABELS_DIR):
 # Slice of the real dataset used by default (CPU-friendly; override via env).
 YELP_CITY = os.getenv("RADVIEW_CITY", "Philadelphia")
 YELP_MAX_RESTAURANTS = int(os.getenv("RADVIEW_MAX_RESTAURANTS", "400"))
-YELP_START_DATE = os.getenv("RADVIEW_START_DATE", "2016-01-01")  # older reviews are not needed for 2016+ monitoring
+YELP_START_DATE = os.getenv("RADVIEW_START_DATE", "2016-01-01")  # 6 years of history keeps CPU scoring manageable
 
 # --------------------------------------------------------------------------
 # Domain constants
@@ -83,5 +83,11 @@ MAX_SEQ_LEN = 128
 LLM_MODEL = os.getenv("RADVIEW_LLM_MODEL", "claude-opus-5-5")
 EVIDENCE_PER_ASPECT = 3
 EVIDENCE_LOOKBACK_MONTHS = 4
+
+# --------------------------------------------------------------------------
+# Compute device for the PyTorch models (M2 transformer, M4 GRU).
+# Default is CPU; set RADVIEW_DEVICE=cuda to opt in to a GPU.
+# --------------------------------------------------------------------------
+DEVICE = os.getenv("RADVIEW_DEVICE", "cpu")
 
 RANDOM_SEED = 42

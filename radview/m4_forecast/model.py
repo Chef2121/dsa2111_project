@@ -25,9 +25,12 @@ import torch
 from sklearn.metrics import average_precision_score
 from torch import nn
 
+from radview.config import DEVICE as _DEVICE_SETTING
 from radview.config import RANDOM_SEED
 
 SEQ_LEN = 12
+# CPU by default; RADVIEW_DEVICE=cuda opts in to a GPU when one is available.
+DEVICE = torch.device("cuda" if _DEVICE_SETTING == "cuda" and torch.cuda.is_available() else "cpu")
 
 
 class SequenceData:
@@ -35,6 +38,7 @@ class SequenceData:
 
     def __init__(self, frame: pd.DataFrame, features: list[str], mean: pd.Series, std: pd.Series):
         self.features = features
+        self.mean, self.std = mean, std  # training statistics, reused for counterfactual frames
         z = ((frame[features] - mean) / std).fillna(0.0).clip(-5, 5).to_numpy(np.float32)
         z = np.concatenate([z, np.zeros((len(z), 1), np.float32)], axis=1)  # last channel = padding flag
         pad = np.zeros((SEQ_LEN - 1, z.shape[1]), np.float32)
@@ -49,9 +53,11 @@ class SequenceData:
             blocks += [pad, z[s:e]]
             pos[s:e] = offset + SEQ_LEN - 1 + np.arange(e - s)
             offset += SEQ_LEN - 1 + (e - s)
-        self.X = torch.from_numpy(np.concatenate(blocks))
-        self.pos = torch.from_numpy(pos)
-        self._steps = torch.arange(-SEQ_LEN + 1, 1)
+        # The whole (rows x features) matrix is small, so it lives on the training device and
+        # windows are gathered there without host<->GPU copies per batch.
+        self.X = torch.from_numpy(np.concatenate(blocks)).to(DEVICE)
+        self.pos = torch.from_numpy(pos).to(DEVICE)
+        self._steps = torch.arange(-SEQ_LEN + 1, 1, device=DEVICE)
 
     @property
     def n_inputs(self) -> int:
@@ -59,7 +65,7 @@ class SequenceData:
 
     def windows(self, rows: np.ndarray | torch.Tensor) -> torch.Tensor:
         """Return (len(rows), SEQ_LEN, F) input windows ending at the given row indices."""
-        idx = self.pos[torch.as_tensor(rows)][:, None] + self._steps[None, :]
+        idx = self.pos[torch.as_tensor(rows, device=DEVICE)][:, None] + self._steps[None, :]
         return self.X[idx]
 
 
@@ -81,7 +87,7 @@ def predict(model: DeclineGRU, data: SequenceData, rows: np.ndarray, batch: int 
     out = []
     with torch.inference_mode():
         for s in range(0, len(rows), batch):
-            out.append(torch.sigmoid(model(data.windows(rows[s:s + batch]))).squeeze(1).numpy())
+            out.append(torch.sigmoid(model(data.windows(rows[s:s + batch]))).squeeze(1).cpu().numpy())
     return np.concatenate(out) if out else np.array([])
 
 
@@ -92,11 +98,11 @@ def train_gru(data: SequenceData, y: np.ndarray, train_rows: np.ndarray, valid_r
     torch.manual_seed(seed)
     torch.set_num_threads(max(1, os.cpu_count() or 1))
     rng = np.random.default_rng(seed)
-    model = DeclineGRU(data.n_inputs)
+    model = DeclineGRU(data.n_inputs).to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
     pos_rate = float(y[train_rows].mean())
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor((1 - pos_rate) / max(pos_rate, 1e-3)))
-    y_t = torch.from_numpy(y.astype(np.float32))
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor((1 - pos_rate) / max(pos_rate, 1e-3), device=DEVICE))
+    y_t = torch.from_numpy(y.astype(np.float32)).to(DEVICE)
     best, best_state, bad, history = -1.0, None, 0, []
     for ep in range(epochs):
         model.train()
@@ -105,7 +111,7 @@ def train_gru(data: SequenceData, y: np.ndarray, train_rows: np.ndarray, valid_r
         for s in range(0, len(order), batch):
             rows = order[s:s + batch]
             logits = model(data.windows(rows)).squeeze(1)
-            loss = loss_fn(logits, y_t[rows])
+            loss = loss_fn(logits, y_t[torch.as_tensor(rows, device=DEVICE)])
             opt.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -136,9 +142,10 @@ def explain(model: DeclineGRU, data: SequenceData, rows: np.ndarray, background_
     """
     rng = np.random.default_rng(seed)
     bg_rows = rng.choice(background_rows, min(n_background, len(background_rows)), replace=False)
-    x = data.windows(rows)
-    bg = data.windows(bg_rows)
-    model.eval()
+    # Explaining a few hundred rows is cheap, so do it on a CPU copy (shap + autograd are simplest there).
+    model = copy.deepcopy(model).cpu().eval()
+    x = data.windows(rows).cpu()
+    bg = data.windows(bg_rows).cpu()
     try:
         import shap
 
