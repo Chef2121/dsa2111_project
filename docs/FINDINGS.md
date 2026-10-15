@@ -35,6 +35,13 @@ This page is the interpretation for the report; RESULTS.md is regenerated automa
    out around 13–16%, which is why risk tiers are defined as *lift* over the base rate (≥1.5× medium,
    ≥2× high) rather than fixed probabilities.
 
+## Robustness check: is it just COVID?
+
+Re-running M4 with all labels after Dec 2019 hidden (`python -m radview.m4_forecast.train --test-end 2019-12`;
+test window Jul 2018 – Dec 2019, training 2016–2017) gives the **same ordering**: rating-trend LogReg AUROC 0.711 /
+PR-AUC 0.163, GRU 0.686 / 0.147, LightGBM variants 0.608–0.632. The simple model's lead is therefore not a COVID
+artefact; with ~6% positives there are too few decline events for higher-capacity models to add much.
+
 ## Caveats that affect every number
 
 - **COVID-19:** the test window (Apr 2020 – Sep 2021) is a regime the model never saw in training
@@ -52,7 +59,6 @@ This page is the interpretation for the report; RESULTS.md is regenerated automa
 
 ## Suggested next experiments
 
-- Re-run M4 with a pre-COVID test split (e.g. test 2018-10 → 2019-09) to separate model quality from regime shift.
 - Redefine the M3 evaluation target as "rating 3 months later is below the *pre-spike* baseline" to test
   whether spikes mark lasting damage rather than predicting a further drop.
 - Hand-label the exported `data/labels/yelp/to_label.csv` (300 reviews) for an in-domain M2 score that

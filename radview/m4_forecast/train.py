@@ -179,8 +179,16 @@ def episode_evaluation(feat: pd.DataFrame, probs: dict[str, np.ndarray], test_st
 # --------------------------------------------------------------------------
 # Training
 # --------------------------------------------------------------------------
-def run(epochs: int = 30) -> dict:
+def run(epochs: int = 30, test_end: str | None = None) -> dict:
+    """Train, compare and deploy the forecasters.
+
+    ``test_end`` (e.g. "2019-12") runs an evaluation-only robustness check: labels after that month are
+    hidden, so the split's test period ends there. Nothing is persisted except
+    outputs/m4_evaluation_test_end_<month>.json; deployed models and scores are untouched.
+    """
     feat = pd.read_parquet(PROCESSED_DIR / "features.parquet").sort_values(["business_id", "month"]).reset_index(drop=True)
+    if test_end:
+        feat.loc[feat["month"] > test_end, "decline"] = np.nan
     tr, va, te, split = time_split(feat)
     print("[M4] split:", split)
     y = feat["decline"].fillna(0).to_numpy().astype(int)
@@ -225,6 +233,11 @@ def run(epochs: int = 30) -> dict:
         ew = r["early_warning"] or {}
         print(f"[M4] {name:18s} AUROC {r['auroc']:.3f}  PR-AUC {r['pr_auc']:.3f}  Brier {r['brier']:.4f}  "
               f"P@10% {r['precision_at_10pct']:.3f}  onsets warned {ew.get('detected_pct')}% lead {ew.get('median_lead_months')}")
+    if test_end:
+        split.pop("test_start")
+        report = {"split": split, "results": results, "test_end": test_end}
+        (OUTPUTS_DIR / f"m4_evaluation_test_end_{test_end}.json").write_text(json.dumps(report, indent=2))
+        return report
     episodes = episode_evaluation(feat, probs, split["test_start"])
     if episodes:
         print("[M4] injected-episode detection:", json.dumps(episodes))
@@ -330,4 +343,9 @@ def score_saved() -> dict:
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Train and evaluate the M4 forecasters.")
+    ap.add_argument("--test-end", help="evaluation-only robustness check with the test period ending this month, "
+                                       "e.g. 2019-12 (pre-COVID)")
+    run(test_end=ap.parse_args().test_end)
