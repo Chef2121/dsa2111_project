@@ -280,7 +280,7 @@ add_runs(p, (
     "and forecasts a statistically significant 0.3-star decline over the next three months with a calibrated "
     "PyTorch GRU over twelve-month feature sequences. Forecasts are explained twice, by SHAP and by a counterfactual "
     "intervention, and an agent built with LangGraph turns them into a ranked action plan whose every claim is checked "
-    "by a mechanical five-axis verifier before an owner sees it. The system runs as Docker containers on Kubernetes "
+    "by a mechanical five-axis verifier before an owner sees it. The system runs as Docker containers on Kubernetes in AWS "
     "behind a REST API and an owner dashboard. On 152,649 reviews of 397 Philadelphia restaurants (2016–2021), the "
     "aspect model reaches macro-F1 0.737 and complaint-F1 0.567 on human-labelled SemEval-2014 sentences, ahead of "
     "TF-IDF and lexicon baselines; all 265 claims in 53 real action plans pass verification while 100% of claims from "
@@ -328,8 +328,8 @@ para("Our approach is to decompose reviews into aspect-level complaints with a t
      "let an agent write the plan under a strict, mechanical verifier. Targeting a *rating decline* rather than "
      "closure gives owners an earlier, milder signal with room to intervene. The main contributions are:")
 bullets([
-    "**An aspect-to-action pipeline on real data.** Weakly supervised aspect-level sentiment from review text (not "
-    "from the star rating) feeds complaint monitoring, a calibrated decline forecaster with two independent "
+    "**An aspect-to-action pipeline on real data.** Weakly supervised aspect-level sentiment read from review text "
+    "(the star rating only fills in polarity for opinion-less sentences in the training labels) feeds complaint monitoring, a calibrated decline forecaster with two independent "
     "explanations, and an action planner — evaluated on 152,649 real Yelp reviews and on human-labelled "
     "SemEval-2014 sentences.",
     "**A grounded agent with a five-axis verifier.** A LangGraph agent in which an LLM — Claude, or a free open-weight "
@@ -537,8 +537,16 @@ para("A FastAPI service exposes ranked restaurants, per-restaurant metrics and t
      "*what do I do first* — and every chart has a table view and light and dark palettes. One CPU-only Docker image "
      "serves all three roles; its build includes a test stage, so an image cannot be produced from code that fails "
      "its tests. Kubernetes manifests define a namespace, a persistent volume claim, a training Job, a weekly "
-     "re-scoring CronJob and health-checked Deployments for the API and the dashboard (two replicas). Table III lists "
-     "the main frameworks.")
+     "re-scoring CronJob and health-checked Deployments for the API and the dashboard (two replicas). The system is "
+     "deployed on the group's cloud machine, an AWS EC2 t3.large (2 vCPU, 8 GB) provisioned through NUS RONIN in "
+     "the Singapore region: a single-node k3s Kubernetes cluster runs the API Deployment and the two dashboard "
+     "replicas from the same manifests, using the host's Docker runtime so the test-gated image is not stored "
+     "twice, with the trained models on a persistent volume. The dashboard Service is reachable only through an "
+     "SSH tunnel, because it has no login and serves Yelp review text; the pods restart automatically whenever "
+     "the machine is started, so it can be stopped between uses to stay within the $100 budget. The training "
+     "Job is not run there: models are trained once and shipped as a bundle. For the open-model experiment the "
+     "same machine was temporarily switched to a g4dn.xlarge with one NVIDIA T4 GPU running Ollama. One command "
+     "(scripts/deploy_ronin_k3s.sh) reproduces the deployment. Table III lists the main frameworks.")
 figure(FIGS / "fig5_dashboard.png",
        "Owner dashboard on real data: plain-English verdict, KPI tiles, monthly rating (gaps where no reviews), complaint "
        "rates against the market median (ticks), and the top of the verified action plan with its small-sample caveat.")
@@ -550,7 +558,7 @@ table("Implementation stack",
        ["Explanation", "SHAP (Gradient & Tree explainers)"],
        ["Agent", "LangGraph, Anthropic SDK (Claude), Ollama (Qwen 2.5 7B)"],
        ["Serving", "FastAPI, Uvicorn, Streamlit, Altair"],
-       ["Deployment", "Docker (multi-stage), Kubernetes, pytest"]],
+       ["Deployment", "Docker (multi-stage), Kubernetes (k3s), AWS EC2 via NUS RONIN, pytest"]],
       [1.0, 2.4])
 
 # =================================================================== IV. EXPERIMENTS
@@ -636,7 +644,7 @@ para(f"Table VI and Fig. 5 compare seven forecasters, from a constant base rate 
      f"Consistent with M3, on this data *what* customers complain about does not improve a three-month decline forecast "
      f"beyond the rating trend itself; the most important LightGBM features by mean |SHAP| are the 6-month and "
      f"cumulative ratings. The COVID-era test window — review volume fell by more than half in 2020 — penalises the "
-     f"higher-capacity models most, and a pre-pandemic test window is the first experiment we would add.")
+     f"higher-capacity models most; Section IV-E therefore repeats the comparison on a pre-pandemic test window.")
 figure(FIGS / "fig4_m4_pr.png",
        "Precision–recall curves on the test period. The dotted line is the 7.0% base rate. The rating-trend logistic "
        "regression dominates at low recall; the GRU is the strongest of the multi-signal models.")
@@ -738,8 +746,9 @@ para("Direct numerical comparison with [4] and [5] would be misleading: both pre
      "fine-tuning DistilBERT took 54 minutes and scoring all 152,649 reviews 52 minutes on CPU; training and evaluating "
      "all seven forecasters takes under two minutes; a rule-based plan takes a quarter of a second and an "
      "open-model plan about 15 s on a T4 GPU. The test-gated Docker image is "
-     "3.6 GB, and the full stack ran on Docker Desktop's single-node Kubernetes cluster once resource requests were "
-     "sized to its 6.8 GiB of allocatable memory; the 23-test suite passes against the real outputs.")
+     "3.6 GB; the full stack runs on the RONIN t3.large (8 GB) under k3s with about 1 GB of memory in use, and was "
+     "first sized on Docker Desktop's single-node cluster (6.8 GiB allocatable); the 27-test suite passes against "
+     "the real outputs.")
 
 # =================================================================== V. CONCLUSION
 h1("Conclusions")
@@ -757,8 +766,7 @@ para("The evaluation also contradicted two of our expectations, and we consider 
      "COVID-era test window; weak labels and an evaluation set without a cleanliness category; low review volumes that "
      "make individual rates noisy; attributions and star costs that are associational rather than causal; a verifier "
      "that checks traceability, not truth; and a small open LLM planner whose claims pass verification only "
-     "69% of the time. Future work: re-test on a "
-     "pre-pandemic window; redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
+     "69% of the time. Future work: redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
      "the exported 300-review Yelp sample; extend to several cities; compare a frontier LLM planner such as Claude with the open model, and collect owner "
      "usefulness ratings, which the dashboard already records.")
 
