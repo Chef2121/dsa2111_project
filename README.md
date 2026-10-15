@@ -163,6 +163,9 @@ docker compose --profile jobs run --rm pipeline
 docker compose up -d api dashboard          # API :8000 · dashboard :8501
 ```
 
+**On the group's RONIN machine** (trained models, Docker Compose, SSH tunnel): follow
+[docs/DEPLOY_RONIN.md](docs/DEPLOY_RONIN.md) — one command, `bash scripts/deploy_ronin.sh`.
+
 Kubernetes (Docker Desktop, minikube, kind, EKS/GKE/AKS):
 
 ```bash
