@@ -88,6 +88,14 @@ MAX_SEQ_LEN = 128
 # M5 - agent
 # --------------------------------------------------------------------------
 LLM_MODEL = os.getenv("RADVIEW_LLM_MODEL", "claude-opus-5-5")
+# Which LLM drafts the plans when one is used:
+#   "anthropic" - Claude through the Anthropic API (needs ANTHROPIC_API_KEY)
+#   "open"      - a free open-weight model behind an OpenAI-compatible endpoint, by default
+#                 Qwen2.5 7B served by Ollama on the same machine (no key, no per-token cost)
+LLM_PROVIDER = os.getenv("RADVIEW_LLM_PROVIDER", "anthropic")
+OPEN_LLM_URL = os.getenv("RADVIEW_OPEN_LLM_URL", "http://localhost:11434/v1")
+OPEN_LLM_MODEL = os.getenv("RADVIEW_OPEN_LLM_MODEL", "qwen2.5:7b")
+OPEN_LLM_TIMEOUT = int(os.getenv("RADVIEW_OPEN_LLM_TIMEOUT", "600"))  # seconds per call; CPU inference is slow
 EVIDENCE_PER_ASPECT = 3
 EVIDENCE_LOOKBACK_MONTHS = 4
 

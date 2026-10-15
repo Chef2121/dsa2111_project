@@ -2,6 +2,12 @@
 #   docker compose run --rm pipeline          # 1) build data + models into ./data (once)
 #   docker compose up -d api dashboard        # 2) serve: API :8000, dashboard :8501
 # Set RADVIEW_SOURCE=synthetic to run without the Yelp files.
+#
+# Free LLM for the M5 agent (no API key): start Ollama, pull the model once, then run with
+# RADVIEW_LLM_PROVIDER=open, e.g.
+#   docker compose --profile llm up -d ollama
+#   docker compose exec ollama ollama pull qwen2.5:7b
+#   RADVIEW_LLM_PROVIDER=open docker compose up -d api dashboard
 x-common: &common
   build: .
   image: radview:latest
@@ -11,6 +17,9 @@ x-common: &common
     RADVIEW_DATA_DIR: /data
     RADVIEW_SOURCE: ${RADVIEW_SOURCE:-}
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    RADVIEW_LLM_PROVIDER: ${RADVIEW_LLM_PROVIDER:-anthropic}
+    RADVIEW_OPEN_LLM_URL: ${RADVIEW_OPEN_LLM_URL:-http://ollama:11434/v1}
+    RADVIEW_OPEN_LLM_MODEL: ${RADVIEW_OPEN_LLM_MODEL:-qwen2.5:7b}
 
 services:
   pipeline:
@@ -38,3 +47,15 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  # Optional free open-weight LLM server for M5 (profile "llm"). Models persist in a named volume.
+  # On a GPU machine with the NVIDIA container toolkit, add a GPU reservation under deploy.resources.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["llm"]
+    ports: ["11434:11434"]
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

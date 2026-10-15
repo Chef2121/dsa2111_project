@@ -116,6 +116,18 @@ python -m radview.m5_agent.cli --business-id <id>          # one plan
 python -m radview.m5_agent.cli --compare 20                # rule-based vs Claude vs adversarial
 ```
 
+**Free open-model plans (no API key, no per-token cost):** the same agent can run a free open-weight model
+with [Ollama](https://ollama.com) on your own machine or cloud VM; the reviews never leave it.
+
+```bash
+ollama pull qwen2.5:7b                                     # once (~4.7 GB); a GPU makes it much faster
+export RADVIEW_LLM_PROVIDER=open                           # PowerShell: $env:RADVIEW_LLM_PROVIDER = "open"
+python -m radview.m5_agent.cli --compare 20                # rule-based vs open model vs adversarial
+```
+
+Any OpenAI-compatible server works (`RADVIEW_OPEN_LLM_URL`, `RADVIEW_OPEN_LLM_MODEL`); plans record which planner
+and model wrote them. In Docker: `docker compose --profile llm up -d ollama`; in Kubernetes: `k8s/30-ollama.yaml`.
+
 ### Configuration (environment variables)
 
 | Variable | Default | Meaning |
@@ -126,6 +138,8 @@ python -m radview.m5_agent.cli --compare 20                # rule-based vs Claud
 | `RADVIEW_START_DATE` | `2016-01-01` | ignore older reviews |
 | `RADVIEW_DEVICE` | `cpu` | `cuda` to train/score the PyTorch models on a GPU |
 | `ANTHROPIC_API_KEY`, `RADVIEW_LLM_MODEL` | – / `claude-opus-5-5` | enable the Claude planner (and the zero-shot M2 baseline) |
+| `RADVIEW_LLM_PROVIDER` | `anthropic` | `open` = M5 uses the free open-weight model instead of Claude |
+| `RADVIEW_OPEN_LLM_URL`, `RADVIEW_OPEN_LLM_MODEL` | `http://localhost:11434/v1` / `qwen2.5:7b` | OpenAI-compatible endpoint and model for `open` (Ollama by default) |
 | `RADVIEW_API_URL` | – | dashboard reads from this API instead of in-process |
 
 Model and threshold settings (decline threshold, horizon, spike z, time split…) are documented in
@@ -181,6 +195,7 @@ kubectl -n radview port-forward svc/radview-dashboard 8501:80
 | `Deployment/radview-api` | FastAPI, readiness/liveness probes, reads the shared volume |
 | `Deployment/radview-dashboard` | Streamlit, stateless (talks to the API), 2 replicas behind a LoadBalancer |
 | `PersistentVolumeClaim/radview-data` | shared data/models/outputs volume |
+| `Deployment/ollama` (optional, `30-ollama.yaml`) | free open-weight LLM server for the M5 agent |
 
 ---
 

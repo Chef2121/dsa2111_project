@@ -1,0 +1,59 @@
+# Optional: a free open-weight LLM server for the M5 agent (no API key, no per-token cost).
+#   kubectl apply -f k8s/30-ollama.yaml
+#   kubectl -n radview exec deploy/ollama -- ollama pull qwen2.5:7b      # once; kept on the PVC
+#   kubectl -n radview patch configmap radview-config -p '{"data":{"RADVIEW_LLM_PROVIDER":"open"}}'
+#   kubectl -n radview rollout restart deploy/radview-api
+# A 7B model (4-bit) needs about 6 GiB of memory; on a GPU node add `nvidia.com/gpu: 1` to the limits.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: radview
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: radview
+  labels: {app: ollama}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ollama}
+  template:
+    metadata:
+      labels: {app: ollama}
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          readinessProbe:
+            httpGet: {path: /, port: 11434}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "2", memory: 6Gi}
+            limits: {memory: 10Gi}
+          volumeMounts:
+            - {name: models, mountPath: /root/.ollama}
+      volumes:
+        - name: models
+          persistentVolumeClaim: {claimName: ollama-models}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: radview
+spec:
+  selector: {app: ollama}
+  ports:
+    - port: 11434
+      targetPort: 11434

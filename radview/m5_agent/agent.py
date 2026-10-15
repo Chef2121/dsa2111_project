@@ -4,24 +4,26 @@ Workflow (one run per restaurant)::
 
     gather ──> prioritise ──> retrieve ──> draft ──> verify ──┬──> finalise
                                              ^                │
-                                             └── (redraft) ───┘  Claude planner only, max 2 attempts
+                                             └── (redraft) ───┘  LLM planners only, max 2 attempts
 
 * gather      - calls the analytics tools: query_metrics, run_forecast, compare_peers
 * prioritise  - ranks aspects by impact (SHAP share + counterfactual risk drop),
                 urgency (complaint spike z-score, growth) and the effort the fix needs
 * retrieve    - get_evidence_reviews for each prioritised aspect
-* draft       - one of two planners behind the same interface:
+* draft       - one of three planners behind the same interface:
                   ClaudePlanner     Claude runs its own tool-calling loop (it may call any
                                     tool again, e.g. fetch evidence for another aspect),
                                     then submits a structured plan via ``submit_plan``
+                  OpenModelPlanner  the same loop with a free open-weight model (default
+                                    Qwen2.5 7B on Ollama) - no API key, no per-token cost
                   RuleBasedPlanner  deterministic; the offline fallback *and* the baseline
-                                    the LLM is measured against
+                                    the LLMs are measured against
 * verify      - mechanical claim checks (verifier.py); only reviews retrieved in this run
                 may be cited
 * finalise    - unverified claims are dropped, groundedness and per-axis failures reported
 
-The plan always records which planner produced it, so a fallback can never be
-mistaken for an LLM plan.
+``RADVIEW_LLM_PROVIDER`` ("anthropic" or "open") picks the LLM planner. The plan always
+records which planner produced it, so a fallback can never be mistaken for an LLM plan.
 """
 from __future__ import annotations
 
@@ -33,7 +35,9 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from radview.config import ASPECTS, LLM_MODEL, OUTPUTS_DIR, PLANS_TOP_N
+from radview.config import (ASPECTS, LLM_MODEL, LLM_PROVIDER, OPEN_LLM_MODEL, OPEN_LLM_URL, OUTPUTS_DIR,
+                            PLANS_TOP_N)
+from radview.m5_agent import open_llm
 from radview.m5_agent.playbook import PLAYBOOK, actions_for, detect_sub_themes
 from radview.m5_agent.tools import (STORE, TOOL_SCHEMAS, compare_peers, execute_tool, get_evidence_reviews,
                                     query_metrics, run_forecast)
@@ -43,6 +47,7 @@ MAX_ITEMS = 3
 LOW_VOLUME = 10   # fewer recent reviews than this -> plans carry an explicit small-sample caveat
 MAX_ATTEMPTS = 2
 MAX_TOOL_TURNS = 10
+LLM_PLANNERS = {"claude", "open_model"}
 PLANS_DIR = OUTPUTS_DIR / "plans"
 PLANS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -54,7 +59,7 @@ EFFORT = {"food": 1.0, "service": 0.8, "cleanliness": 0.6, "price": 0.9, "ambien
 class PlanState(TypedDict, total=False):
     business_id: str
     use_llm: bool
-    planner_override: str   # "rule_based" | "claude" | "adversarial" (evaluation); default: by use_llm
+    planner_override: str   # "rule_based" | "claude" | "open_model" | "adversarial" (evaluation); default: by use_llm
     metrics: dict
     forecast: dict
     peers: dict
@@ -209,6 +214,19 @@ Rules for the plan:
 Every claim is checked mechanically afterwards; unsupported claims are deleted before the owner sees the plan."""
 
 
+def _brief(state: PlanState) -> str:
+    """The opening message every LLM planner receives (plus verifier feedback on a redraft)."""
+    biz = STORE.businesses.loc[state["business_id"]]
+    brief = {"restaurant": {"name": biz["name"], "cuisine": biz["cuisine"], "city": biz["city"]},
+             "pre_ranked_priorities": state["priorities"],
+             "playbook": {p["aspect"]: PLAYBOOK[p["aspect"]] for p in state["priorities"]}}
+    text = "Write the action plan for this restaurant.\n" + json.dumps(brief, default=str)
+    if state.get("feedback"):
+        text += ("\n\nYour previous plan had claims that failed verification - fix or drop them:\n- "
+                 + "\n- ".join(state["feedback"]))
+    return text
+
+
 class ClaudePlanner:
     """Claude with tool calling. The loop is written out (not delegated to an SDK helper) because every
     evidence id the model sees must be recorded - the verifier checks citations against them."""
@@ -222,15 +240,7 @@ class ClaudePlanner:
 
     def draft(self, state: PlanState) -> tuple[dict | None, dict]:
         bid = state["business_id"]
-        biz = STORE.businesses.loc[bid]
-        brief = {"restaurant": {"name": biz["name"], "cuisine": biz["cuisine"], "city": biz["city"]},
-                 "pre_ranked_priorities": state["priorities"],
-                 "playbook": {p["aspect"]: PLAYBOOK[p["aspect"]] for p in state["priorities"]}}
-        text = ("Write the action plan for this restaurant.\n" + json.dumps(brief, default=str))
-        if state.get("feedback"):
-            text += ("\n\nYour previous plan had claims that failed verification - fix or drop them:\n- "
-                     + "\n- ".join(state["feedback"]))
-        messages: list[dict] = [{"role": "user", "content": text}]
+        messages: list[dict] = [{"role": "user", "content": _brief(state)}]
         tools = TOOL_SCHEMAS + [SUBMIT_PLAN_TOOL]
         retrieved, calls = set(), []
         usage = {"input_tokens": 0, "output_tokens": 0, "turns": 0}
@@ -269,6 +279,76 @@ class ClaudePlanner:
         return None, usage
 
 
+class OpenModelPlanner:
+    """A free open-weight model with tool calling, over any OpenAI-compatible endpoint (default: Qwen2.5 7B
+    on a local Ollama server). Same prompt, tools and evidence bookkeeping as ClaudePlanner, so the two are
+    directly comparable; output-format slips of small models are repaired, never their content."""
+    name = "open_model"
+
+    def __init__(self, model: str = OPEN_LLM_MODEL, base_url: str = OPEN_LLM_URL):
+        self.model, self.base_url = model, base_url
+
+    def draft(self, state: PlanState) -> tuple[dict | None, dict]:
+        bid = state["business_id"]
+        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT},
+                                {"role": "user", "content": _brief(state)}]
+        tools = open_llm.to_openai_tools(TOOL_SCHEMAS + [SUBMIT_PLAN_TOOL])
+        retrieved, calls = set(), []
+        usage = {"model": self.model, "input_tokens": 0, "output_tokens": 0, "turns": 0, "retries": 0}
+
+        def done(plan: dict) -> tuple[dict, dict]:
+            return open_llm.normalise_plan(plan), {"usage": usage, "retrieved": retrieved, "calls": calls}
+
+        for _ in range(MAX_TOOL_TURNS):
+            resp, retried = open_llm.chat_with_retry(self.base_url, self.model, messages, tools)
+            usage["turns"] += 1
+            usage["retries"] += retried
+            usage["input_tokens"] += (resp.get("usage") or {}).get("prompt_tokens", 0)
+            usage["output_tokens"] += (resp.get("usage") or {}).get("completion_tokens", 0)
+            msg = resp["choices"][0]["message"]
+            tool_calls = msg.get("tool_calls") or []
+            messages.append({"role": "assistant", "content": msg.get("content") or "",
+                             **({"tool_calls": tool_calls} if tool_calls else {})})
+            if not tool_calls:
+                plan = open_llm.plan_from_text(msg.get("content") or "")
+                if plan is not None:
+                    calls.append({"tool": "submit_plan", "args": {"written_as_text": True}})
+                    return done(plan)
+                messages.append({"role": "user", "content": "Call submit_plan with the finished plan."})
+                continue
+            plan = None
+            for tc in tool_calls:
+                name = tc["function"]["name"]
+                try:
+                    args = open_llm.parse_arguments(tc["function"].get("arguments"))
+                    calls.append({"tool": name, "args": args})
+                    if name == "submit_plan":
+                        plan, content = args, "received"
+                    else:
+                        out = execute_tool(bid, name, args)
+                        if name == "get_evidence_reviews":
+                            retrieved |= {r["review_id"] for r in out["reviews"]}
+                        content = json.dumps(out, default=str)
+                except Exception as exc:  # bad arguments or tool errors go back to the model
+                    content = f"error: {exc}"
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": content})
+            if plan is not None:
+                return done(plan)
+        return None, {"usage": usage}
+
+
+def _llm_planner(override: str | None):
+    """The LLM planner to use: forced by ``override``, otherwise chosen by RADVIEW_LLM_PROVIDER."""
+    if override == "open_model" or (override != "claude" and LLM_PROVIDER == "open"):
+        return OpenModelPlanner()
+    return ClaudePlanner()
+
+
+def llm_configured() -> bool:
+    """Whether an LLM planner is set up (it can still fail at run time, which falls back to rules)."""
+    return LLM_PROVIDER == "open" or bool(os.getenv("ANTHROPIC_API_KEY"))
+
+
 # --------------------------------------------------------------------------
 # Draft / verify / finalise nodes
 # --------------------------------------------------------------------------
@@ -279,11 +359,14 @@ def draft(state: PlanState) -> PlanState:
         plan, extra = HallucinatingPlanner().draft(state)
         planner = "adversarial"
     elif state.get("use_llm"):
+        llm = None
         try:
-            plan, extra = ClaudePlanner().draft(state)
-            planner = "claude"
-        except Exception as exc:  # no credentials, network, API errors -> deterministic fallback
-            print(f"[M5] Claude planner unavailable ({type(exc).__name__}: {exc}); using rule-based planner")
+            llm = _llm_planner(state.get("planner_override"))
+            plan, extra = llm.draft(state)
+            planner = llm.name
+        except Exception as exc:  # no credentials, server down, API errors -> deterministic fallback
+            print(f"[M5] {getattr(llm, 'name', 'LLM')} planner unavailable ({type(exc).__name__}: {exc}); "
+                  "using rule-based planner")
         if plan is None:
             planner = "rule_based"
     if plan is None:
@@ -312,7 +395,7 @@ def verify(state: PlanState) -> PlanState:
 
 
 def route_after_verify(state: PlanState) -> str:
-    if state.get("feedback") and state.get("planner") == "claude" and state["attempts"] < MAX_ATTEMPTS:
+    if state.get("feedback") and state.get("planner") in LLM_PLANNERS and state["attempts"] < MAX_ATTEMPTS:
         return "draft"
     return "finalise"
 
@@ -353,7 +436,7 @@ def finalise(state: PlanState) -> PlanState:
     plan = {"business_id": state["business_id"], "name": biz["name"], "month": fc["month"], "risk": fc["risk"],
             "risk_level": fc["risk_level"], "summary": summary, "items": items,
             "verification": d["verification"], "rejected_claims": rejected,
-            "planner": state["planner"], "mode": "llm" if state["planner"] == "claude" else "deterministic",
+            "planner": state["planner"], "mode": "llm" if state["planner"] in LLM_PLANNERS else "deterministic",
             "attempts": state["attempts"], "tool_calls": state["tool_calls"], "llm_usage": state.get("llm_usage"),
             "generated_at": datetime.now().isoformat(timespec="seconds")}
     return {"plan": plan}
@@ -381,15 +464,15 @@ def generate_plan(business_id: str, use_llm: bool | None = None, save: bool = Tr
                   planner: str | None = None) -> dict[str, Any]:
     """Run the agent for one restaurant and return the verified plan.
 
-    ``planner`` forces a planner for evaluation ("rule_based", "claude", "adversarial").
+    ``planner`` forces a planner for evaluation ("rule_based", "claude", "open_model", "adversarial").
     """
     global _GRAPH
     if _GRAPH is None:
         _GRAPH = build_graph()
     if use_llm is None:
-        use_llm = bool(os.getenv("ANTHROPIC_API_KEY"))
+        use_llm = llm_configured()
     t0 = time.time()
-    if planner == "claude":
+    if planner in LLM_PLANNERS:
         use_llm = True
     elif planner == "rule_based":
         use_llm = False
