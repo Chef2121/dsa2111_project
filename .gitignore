@@ -22,3 +22,6 @@ DSA2111 Group Project Assessments.pdf
 
 # Original proposal file lives in docs/
 DSA2111 group 10 project proposal template.docx
+
+# Shareable data bundle (contains Yelp text - never commit)
+*.zip

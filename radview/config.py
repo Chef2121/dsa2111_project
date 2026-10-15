@@ -20,8 +20,11 @@ DATA_DIR = Path(os.getenv("RADVIEW_DATA_DIR", ROOT / "data"))
 #   "synthetic" - the Yelp-format simulator output in data/synthetic/raw/
 # Each source gets its own working directory so results never overwrite each other.
 _YELP_DIR = DATA_DIR / "yelp"
+# Yelp is chosen when its raw files are present *or* a finished Yelp run is (e.g. teammates who only
+# received the trained-models bundle, not the 5 GB raw dataset).
 SOURCE = os.getenv("RADVIEW_SOURCE") or (
-    "yelp" if (_YELP_DIR / "yelp_academic_dataset_review.json").exists() else "synthetic")
+    "yelp" if (_YELP_DIR / "yelp_academic_dataset_review.json").exists()
+    or (DATA_DIR / "work" / "yelp" / "outputs" / "risk_latest.parquet").exists() else "synthetic")
 RAW_DIR = Path(os.getenv("RADVIEW_RAW_DIR", _YELP_DIR if SOURCE == "yelp" else DATA_DIR / "synthetic" / "raw"))
 WORK_DIR = DATA_DIR / "work" / SOURCE
 PROCESSED_DIR = WORK_DIR / "processed"  # cleaned parquet tables, panel, trends
