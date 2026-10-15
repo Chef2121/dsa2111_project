@@ -1,0 +1,22 @@
+{
+  "source": "yelp",
+  "mode": "full",
+  "finished_at": "2026-10-15T00:23:19",
+  "timings_s": {
+    "m1": 54.2,
+    "m2": 6455.2,
+    "m3": 15.9,
+    "m4": 89.1,
+    "m5": 1.6
+  },
+  "m5": {
+    "plans": 0,
+    "claims_total": 0,
+    "claims_verified": 0,
+    "groundedness": null,
+    "planners": {},
+    "modes": {},
+    "failures_by_axis": {},
+    "median_latency_s": null
+  }
+}

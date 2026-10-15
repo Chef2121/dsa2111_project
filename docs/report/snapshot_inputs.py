@@ -22,6 +22,9 @@ FILES = {
     YELP / "m4_evaluation_test_end_2019-12.json": "m4_evaluation_test_end_2019-12.json",  # Table VII (pre-COVID)
     YELP / "m5_planner_comparison.json": "m5_planner_comparison.json",    # Table VIII
     SYN / "m4_evaluation.json": "m4_evaluation_synthetic.json",           # injected-episode results
+    YELP / "m5_evaluation.json": "m5_evaluation.json",                    # M5 batch groundedness
+    YELP / "pipeline_run.json": "pipeline_run.json",                      # module run times
+    ROOT / "data" / "work" / "yelp" / "processed" / "ingest_report.json": "ingest_report.json",  # Table II
 }
 
 if __name__ == "__main__":

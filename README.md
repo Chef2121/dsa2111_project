@@ -32,7 +32,8 @@ before the owner sees it.
 | **M6** Serving | FastAPI REST API + Streamlit dashboard (light/dark), one Docker image with a pytest gate, Kubernetes Job / CronJob / Deployments. | [`radview/api/`](radview/api/), [`dashboard/`](dashboard/), [`k8s/`](k8s/) |
 
 Results from the latest run are in **[docs/RESULTS.md](docs/RESULTS.md)** (regenerate with `python scripts/make_results.py`);
-**[docs/FINDINGS.md](docs/FINDINGS.md)** interprets them — including what did *not* work on real data.
+**[docs/TEST_OUTPUTS.md](docs/TEST_OUTPUTS.md)** collects every test output in one file (all metrics, the pre-COVID
+check, training curves, planner comparison, every pytest result, raw JSON); **[docs/FINDINGS.md](docs/FINDINGS.md)** interprets them — including what did *not* work on real data.
 
 **Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best aspect model on human-labelled
 SemEval-2014 (macro-F1 0.737, complaint-F1 0.567); the agent's 53 plans are 100% verified while an adversarial planner is

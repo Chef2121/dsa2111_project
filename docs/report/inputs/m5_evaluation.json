@@ -1,0 +1,20 @@
+{
+  "plans": 53,
+  "claims_total": 265,
+  "claims_verified": 265,
+  "groundedness": 1.0,
+  "planners": {
+    "rule_based": 53
+  },
+  "modes": {
+    "rule_based": 53
+  },
+  "failures_by_axis": {
+    "citation": 0,
+    "quotation": 0,
+    "relevance": 0,
+    "statistic": 0,
+    "substance": 0
+  },
+  "median_latency_s": 0.27
+}
