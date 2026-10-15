@@ -55,7 +55,7 @@ box(ax, 0.185, 0.47, 0.15, 0.38, "M1 Ingestion\nstream 5 GB JSON,\nfilter restau
 box(ax, 0.375, 0.66, 0.17, 0.22, "M2 Aspect classifier\nfine-tuned DistilBERT\n(weak supervision)", "#fdf1e3")
 box(ax, 0.375, 0.39, 0.17, 0.2, "M3 Trend detector\nEWMA + robust z-score", "#fdf1e3")
 box(ax, 0.375, 0.08, 0.17, 0.24, "M4 Decline forecaster\nGRU ensemble, market\nfeatures, calibration,\nSHAP + counterfactual", "#fdf1e3")
-box(ax, 0.59, 0.25, 0.2, 0.6, "M5 Agent (LangGraph)\n\nTools: query_metrics,\nrun_forecast,\nget_evidence_reviews,\ncompare_peers\n\nClaude / rule-based\nplanner → 5-axis\nclaim verifier", "#f1e8f8")
+box(ax, 0.59, 0.25, 0.2, 0.6, "M5 Agent (LangGraph)\n\nTools: query_metrics,\nrun_forecast,\nget_evidence_reviews,\ncompare_peers\n\nLLM / rule-based\nplanner → 5-axis\nclaim verifier", "#f1e8f8")
 box(ax, 0.83, 0.25, 0.15, 0.6, "M6 Serving\n\nFastAPI\nREST API\n+\nStreamlit\nowner\ndashboard", "#e3f3f3")
 box(ax, 0.185, 0.08, 0.15, 0.25, "Weekly CronJob\nre-ingest, re-score,\nregenerate plans", "#e8f5ec")
 arrow(ax, (0.145, 0.71), (0.185, 0.68))
@@ -73,7 +73,7 @@ fig.savefig(OUT / "fig1_architecture.png"); plt.close(fig)
 fig, ax = plt.subplots(figsize=(3.45, 2.05))
 ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
 steps = [("gather\nmetrics, forecast,\npeers", 0.02), ("prioritise\nimpact × urgency\n÷ effort", 0.27),
-         ("retrieve\nevidence\nreviews", 0.52), ("draft\nClaude tool loop\nor rule-based", 0.77)]
+         ("retrieve\nevidence\nreviews", 0.52), ("draft\nLLM tool loop\nor rule-based", 0.77)]
 for t, x in steps:
     box(ax, x, 0.58, 0.21, 0.32, t, "#f1e8f8", fs=6.2)
 for i in range(3):
@@ -82,7 +82,7 @@ box(ax, 0.40, 0.06, 0.34, 0.32, "verify (5 axes)\ncitation · quotation ·\nrele
 box(ax, 0.02, 0.06, 0.3, 0.32, "finalise\nkeep verified claims;\nlog rejected ones;\ngroundedness score", "#e8f5ec", fs=6.2)
 arrow(ax, (0.83, 0.58), (0.74, 0.30)); arrow(ax, (0.40, 0.22), (0.32, 0.22))
 arrow(ax, (0.74, 0.16), (0.93, 0.58), rad=0.35)
-ax.text(0.97, 0.30, "redraft\n(Claude,\n≤2 tries)", fontsize=5.8, ha="center", color="#52514e", style="italic")
+ax.text(0.97, 0.30, "redraft\n(LLM,\n≤2 tries)", fontsize=5.8, ha="center", color="#52514e", style="italic")
 fig.savefig(OUT / "fig2_agent.png"); plt.close(fig)
 
 # ---------------------------------------------------------------- Fig 3: M2 per-aspect F1

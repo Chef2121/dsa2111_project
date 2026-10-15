@@ -30,6 +30,7 @@ m2 = json.loads((Y / "m2_evaluation.json").read_text())
 m3 = json.loads((Y / "m3_evaluation.json").read_text())
 m4 = json.loads((Y / "m4_evaluation.json").read_text())
 m5c = json.loads((Y / "m5_planner_comparison.json").read_text())
+m5o = json.loads((Y / "m5_open_model_summary.json").read_text(encoding="utf8"))
 m4s = json.loads((Y / "m4_evaluation_synthetic.json").read_text())
 m4pre = json.loads((Y / "m4_evaluation_test_end_2019-12.json").read_text())
 
@@ -283,7 +284,8 @@ add_runs(p, (
     "behind a REST API and an owner dashboard. On 152,649 reviews of 397 Philadelphia restaurants (2016–2021), the "
     "aspect model reaches macro-F1 0.737 and complaint-F1 0.567 on human-labelled SemEval-2014 sentences, ahead of "
     "TF-IDF and lexicon baselines; all 265 claims in 53 real action plans pass verification while 100% of claims from "
-    "an adversarial planner are rejected. On an out-of-time, COVID-era test period the GRU (AUROC 0.727) is the best "
+    "an adversarial planner are rejected, and a free open model (Qwen 2.5 7B) acting as the agent gets only 69% of "
+    "its claims verified. On an out-of-time, COVID-era test period the GRU (AUROC 0.727) is the best "
     "learned multi-signal model, but a rating-trend logistic regression is marginally better (0.738), and complaint "
     "spikes do not anticipate declines at monthly granularity. We report these negative results and discuss why."),
     size=9, bold=True)
@@ -330,8 +332,9 @@ bullets([
     "from the star rating) feeds complaint monitoring, a calibrated decline forecaster with two independent "
     "explanations, and an action planner — evaluated on 152,649 real Yelp reviews and on human-labelled "
     "SemEval-2014 sentences.",
-    "**A grounded agent with a five-axis verifier.** A LangGraph agent in which Claude chooses which analytics tools "
-    "to call, with a deterministic planner as fallback and baseline; every claim is checked for citation, verbatim "
+    "**A grounded agent with a five-axis verifier.** A LangGraph agent in which an LLM — Claude, or a free open-weight "
+    "model served on our own GPU — chooses which analytics tools to call, with a deterministic planner as fallback "
+    "and baseline; every claim is checked for citation, verbatim "
     "quotation, aspect relevance, numeric fidelity and substance, and an adversarial planner demonstrates that "
     "fabrications are rejected.",
     "**A reproducible cloud-native deployment with honest evaluation.** Docker images gated by tests, Kubernetes "
@@ -508,12 +511,16 @@ para("M5 is a LangGraph state machine (Fig. 2). It first calls four tools — *q
 
 
 figure(FIGS / "fig2_agent.png",
-       "M5 agent workflow. The Claude planner may redraft once when claims fail verification; unverified claims never "
+       "M5 agent workflow. An LLM planner (Claude or the open model) may redraft once when claims fail verification; unverified claims never "
        "reach the owner but are logged.")
-para("Two planners sit behind the *draft* node. The **Claude planner** receives the pre-ranked priorities and the tool "
+para("Three planners sit behind the *draft* node. The **Claude planner** receives the pre-ranked priorities and the tool "
      "definitions and runs its own tool-calling loop — for instance fetching evidence for an aspect the analytics did "
      "not rank first — then submits the plan through a strict JSON-schema tool; every evidence ID it sees is recorded. "
-     "The **rule-based planner** fills templates from the same tool outputs and the action playbook; it is both the "
+     "The **open-model planner** runs the same prompt, tools and loop against a free open-weight model (Qwen 2.5 7B) "
+     "served by Ollama through an OpenAI-compatible API, so it needs no API key, has no per-token cost and keeps "
+     "reviews on the group's own server; it repairs only output-format slips (e.g. tool arguments sent as strings) and, "
+     "when greedy decoding falls into a repetition loop that the server aborts, retries that turn once at temperature "
+     "0.4. The **rule-based planner** fills templates from the same tool outputs and the action playbook; it is both the "
      "offline fallback and the baseline. The **verifier** then checks every claim on five axes: *citation* (the review "
      "exists, belongs to this restaurant and was retrieved in this run), *quotation* (the quote appears verbatim), "
      "*relevance* (M2 labels the review negative on the aspect and the quoted sentence alone is a complaint about it), "
@@ -541,7 +548,7 @@ table("Implementation stack",
        ["Aspect models", "PyTorch, Hugging Face Transformers, scikit-learn"],
        ["Forecasting", "PyTorch (GRU), LightGBM, scikit-learn"],
        ["Explanation", "SHAP (Gradient & Tree explainers)"],
-       ["Agent", "LangGraph, Anthropic SDK (Claude)"],
+       ["Agent", "LangGraph, Anthropic SDK (Claude), Ollama (Qwen 2.5 7B)"],
        ["Serving", "FastAPI, Uvicorn, Streamlit, Altair"],
        ["Deployment", "Docker (multi-stage), Kubernetes, pytest"]],
       [1.0, 2.4])
@@ -685,14 +692,16 @@ para("*Construct validity.* Our decline label is a statistical construct; a rest
 
 h2("Grounded Action Plans (M5)")
 pl = m5c["planners"]
+PLANNER_NAMES = {"rule_based": "Rule-based", "open_model": "Qwen 2.5 7B", "claude": "Claude", "adversarial": "Adversarial"}
 table("Planner comparison on the 20 riskiest restaurants",
       ["Planner", "Grounded", "Claims", "Cit.", "Quo.", "Rel.", "Stat.", "Sub."],
-      [[k.replace("_", "-"), f"{v['groundedness']:.0%}", str(v["claims_total"]),
+      [[PLANNER_NAMES.get(k, k), f"{v['groundedness']:.0%}", str(v["claims_total"]),
         *[str(v["failures_by_axis"][a]) for a in ("citation", "quotation", "relevance", "statistic", "substance")]]
-       for k, v in pl.items()],
+       for k, v in sorted(pl.items(), key=lambda kv: list(PLANNER_NAMES).index(kv[0]) if kv[0] in PLANNER_NAMES else 9)],
       [0.72, 0.56, 0.44, 0.34, 0.34, 0.34, 0.34, 0.32], size=7,
-      note="Last five columns: claims rejected on each verifier axis (a claim can fail several). The Claude planner "
-           "could not be run: no API key was available.")
+      note="Last five columns: claims rejected on each verifier axis (a claim can fail several). Qwen 2.5 7B ran "
+           "through Ollama on one NVIDIA T4 GPU (AWS g4dn.xlarge via NUS RONIN). The Claude planner could not be run: "
+           "no API key was available.")
 para(f"Across all 53 at-risk restaurants, the rule-based planner produced 265 claims and all of them passed the "
      f"verifier, with a median latency of 0.27 s per plan. This is expected by construction — the planner only "
      f"restates tool outputs — so the verifier's value is shown by the adversarial planner (Table VIII): every one of its "
@@ -700,8 +709,25 @@ para(f"Across all 53 at-risk restaurants, the rule-based planner produced 265 cl
      f"IDs (citation) to quoted praise passed off as complaints (relevance). Inspecting real plans exposed two issues "
      f"we then fixed: rates such as \"33% of reviews\" can mean one of three reviews in the sparse late-2021 data, so "
      f"plans now state counts and add a small-sample caveat below ten reviews; and generic keywords led some actions to "
-     f"default to generic advice. The Claude planner is fully implemented and its fallback is tested, but measuring "
-     f"its groundedness, latency and cost requires an API key that was not available.")
+     f"default to generic advice.")
+qo = pl["open_model"]
+ex = m5o["rejected_examples_model_written"]
+para(f"The open-model planner shows why the verifier is needed. Qwen 2.5 7B behaved as an agent — beyond the fixed "
+     f"analytics calls it chose {m5o['model_chosen_tool_calls_per_plan']} further tool calls per plan, mostly to fetch "
+     f"more review evidence or compare peers — but only {qo['claims_verified']} of its {qo['claims_total']} final "
+     f"claims ({qo['groundedness']:.1%}) passed verification. Of the {m5o['restaurants']} plans, "
+     f"{m5o['plans_fully_verified']} were fully grounded and {m5o['plans_redrafted_after_verifier_feedback']} needed a "
+     f"redraft after verifier feedback, but {m5o['plans_with_no_verified_claim']} ended with no verified claim. The "
+     f"rejected claims were mainly paraphrases presented as quotations ({qo['failures_by_axis']['quotation']}), metric "
+     f"claims with no checkable figure ({qo['failures_by_axis']['substance']}; e.g. \"{ex['substance']['claim']}\") and "
+     f"citations of reviews that were never retrieved, including invented identifiers such as \"r123\"; one stated a "
+     f"statistic the tools never returned (\"{ex['statistic']['claim']}\"). Owners therefore saw "
+     f"{m5o['owner_visible_items_with_verified_quote']} action items backed by a verified quotation, against "
+     f"{m5o['rule_based_items_with_verified_quote']} from the rule-based planner. A plan took a median of "
+     f"{qo['median_latency_s']:.1f} s and about {qo['mean_tokens']:,} tokens on one T4 GPU, at no per-token cost, and "
+     f"its actions were largely adapted from the playbook. On this evidence a 7-billion-parameter open model adds "
+     f"investigative flexibility but not more specific advice, and is only safe to show owners behind the verifier; "
+     f"the Claude planner is implemented and tested but could not be measured without an API key.")
 
 h2("Comparison with Existing Methods and System Performance")
 para("Direct numerical comparison with [4] and [5] would be misleading: both predict permanent closure, an outcome "
@@ -710,7 +736,8 @@ para("Direct numerical comparison with [4] and [5] would be misleading: both pre
      "both papers leave as future work — aspect-level causes and recommendations — at the cost of a harder, noisier "
      "target, and our AUROC of 0.73–0.74 on that target is consistent with the gap between the tasks. Operationally, "
      "fine-tuning DistilBERT took 54 minutes and scoring all 152,649 reviews 52 minutes on CPU; training and evaluating "
-     "all seven forecasters takes under two minutes; a plan takes a quarter of a second. The test-gated Docker image is "
+     "all seven forecasters takes under two minutes; a rule-based plan takes a quarter of a second and an "
+     "open-model plan about 15 s on a T4 GPU. The test-gated Docker image is "
      "3.6 GB, and the full stack ran on Docker Desktop's single-node Kubernetes cluster once resource requests were "
      "sized to its 6.8 GiB of allocatable memory; the 23-test suite passes against the real outputs.")
 
@@ -720,7 +747,8 @@ para("Radview is an end-to-end, containerised system that turns raw restaurant r
      "signals, a calibrated decline forecast with two independent explanations, and a ranked action plan in which "
      "every claim is mechanically verified. On real Yelp data its fine-tuned DistilBERT is the most accurate aspect "
      "model on human-labelled SemEval sentences, especially for detecting complaints; its agent produced 53 fully "
-     "grounded plans while rejecting every fabricated claim; and its GRU is the best multi-signal forecaster. Our "
+     "grounded plans while rejecting every fabricated claim, and kept a free open model's unsupported claims "
+     "(31% of its drafts) away from owners; and its GRU is the best multi-signal forecaster. Our "
      "main contributions are the aspect-to-action pipeline evaluated on real data, the five-axis verifier with an "
      "adversarial test, and a reproducible cloud-native deployment.")
 para("The evaluation also contradicted two of our expectations, and we consider reporting this part of the "
@@ -728,9 +756,10 @@ para("The evaluation also contradicted two of our expectations, and we consider 
      "aspect signals, and complaint spikes do not anticipate declines at monthly granularity. Open limitations are the "
      "COVID-era test window; weak labels and an evaluation set without a cleanliness category; low review volumes that "
      "make individual rates noisy; attributions and star costs that are associational rather than causal; a verifier "
-     "that checks traceability, not truth; and an LLM planner that still has to be measured. Future work: re-test on a "
+     "that checks traceability, not truth; and a small open LLM planner whose claims pass verification only "
+     "69% of the time. Future work: re-test on a "
      "pre-pandemic window; redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
-     "the exported 300-review Yelp sample; extend to several cities; evaluate the Claude planner and collect owner "
+     "the exported 300-review Yelp sample; extend to several cities; compare a frontier LLM planner such as Claude with the open model, and collect owner "
      "usefulness ratings, which the dashboard already records.")
 
 # =================================================================== REFERENCES
