@@ -1,0 +1,301 @@
+{
+  "split": {
+    "train": "2019-01..2022-09",
+    "valid": "2022-10..2023-03",
+    "test": "2023-04..2024-09",
+    "n_train": 7880,
+    "n_valid": 1311,
+    "n_test": 3935,
+    "pos_rate_train": 0.0744,
+    "pos_rate_test": 0.0956
+  },
+  "results": {
+    "majority": {
+      "auroc": 0.5,
+      "pr_auc": 0.0956,
+      "brier": 0.0869,
+      "precision_at_10pct": 0.1349,
+      "recall_at_10pct": 0.141,
+      "early_warning": null
+    },
+    "current_negativity": {
+      "auroc": 0.4851,
+      "pr_auc": 0.0959,
+      "brier": 0.0864,
+      "precision_at_10pct": 0.0967,
+      "recall_at_10pct": 0.1011,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 48.5,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.76
+      }
+    },
+    "rating_logreg": {
+      "auroc": 0.6388,
+      "pr_auc": 0.1462,
+      "brier": 0.0849,
+      "precision_at_10pct": 0.1781,
+      "recall_at_10pct": 0.1862,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 34.4,
+        "median_lead_months": 3.0,
+        "mean_lead_months": 3.25
+      }
+    },
+    "rating_lgbm": {
+      "auroc": 0.6463,
+      "pr_auc": 0.1962,
+      "brier": 0.0833,
+      "precision_at_10pct": 0.2519,
+      "recall_at_10pct": 0.2633,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 44.2,
+        "median_lead_months": 3.5,
+        "mean_lead_months": 3.25
+      }
+    },
+    "sentiment_lgbm": {
+      "auroc": 0.6501,
+      "pr_auc": 0.1893,
+      "brier": 0.0839,
+      "precision_at_10pct": 0.2341,
+      "recall_at_10pct": 0.2447,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 41.1,
+        "median_lead_months": 3.0,
+        "mean_lead_months": 3.21
+      }
+    },
+    "radview_lgbm": {
+      "auroc": 0.6248,
+      "pr_auc": 0.1546,
+      "brier": 0.0849,
+      "precision_at_10pct": 0.1934,
+      "recall_at_10pct": 0.2021,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 46.6,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.86
+      }
+    },
+    "radview_gru": {
+      "auroc": 0.637,
+      "pr_auc": 0.1889,
+      "brier": 0.0836,
+      "precision_at_10pct": 0.2519,
+      "recall_at_10pct": 0.2633,
+      "early_warning": {
+        "onsets": 163,
+        "detected_pct": 31.9,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.79
+      }
+    }
+  },
+  "injected_episodes": {
+    "current_negativity": {
+      "episodes": 67,
+      "detected_pct": 28.4,
+      "before_visible_pct": 25.4,
+      "median_lead_months": 2.0
+    },
+    "rating_logreg": {
+      "episodes": 67,
+      "detected_pct": 61.2,
+      "before_visible_pct": 23.9,
+      "median_lead_months": 0.0
+    },
+    "rating_lgbm": {
+      "episodes": 67,
+      "detected_pct": 67.2,
+      "before_visible_pct": 14.9,
+      "median_lead_months": 0.0
+    },
+    "sentiment_lgbm": {
+      "episodes": 67,
+      "detected_pct": 68.7,
+      "before_visible_pct": 13.4,
+      "median_lead_months": -0.5
+    },
+    "radview_lgbm": {
+      "episodes": 67,
+      "detected_pct": 68.7,
+      "before_visible_pct": 17.9,
+      "median_lead_months": 0.0
+    },
+    "radview_gru": {
+      "episodes": 67,
+      "detected_pct": 65.7,
+      "before_visible_pct": 22.4,
+      "median_lead_months": 0.0
+    }
+  },
+  "gru_training": [
+    {
+      "best_valid_pr_auc": 0.2716,
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 1.2244,
+          "valid_pr_auc": 0.2343
+        },
+        {
+          "epoch": 2,
+          "train_loss": 1.1308,
+          "valid_pr_auc": 0.2466
+        },
+        {
+          "epoch": 3,
+          "train_loss": 1.0643,
+          "valid_pr_auc": 0.2716
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.0338,
+          "valid_pr_auc": 0.242
+        },
+        {
+          "epoch": 5,
+          "train_loss": 0.9759,
+          "valid_pr_auc": 0.2464
+        },
+        {
+          "epoch": 6,
+          "train_loss": 0.9031,
+          "valid_pr_auc": 0.2566
+        },
+        {
+          "epoch": 7,
+          "train_loss": 0.8715,
+          "valid_pr_auc": 0.1989
+        },
+        {
+          "epoch": 8,
+          "train_loss": 0.8438,
+          "valid_pr_auc": 0.2131
+        }
+      ]
+    },
+    {
+      "best_valid_pr_auc": 0.2401,
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 1.2225,
+          "valid_pr_auc": 0.2401
+        },
+        {
+          "epoch": 2,
+          "train_loss": 1.1401,
+          "valid_pr_auc": 0.1825
+        },
+        {
+          "epoch": 3,
+          "train_loss": 1.0578,
+          "valid_pr_auc": 0.2152
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.0146,
+          "valid_pr_auc": 0.201
+        },
+        {
+          "epoch": 5,
+          "train_loss": 0.9674,
+          "valid_pr_auc": 0.2326
+        },
+        {
+          "epoch": 6,
+          "train_loss": 0.9224,
+          "valid_pr_auc": 0.2276
+        }
+      ]
+    },
+    {
+      "best_valid_pr_auc": 0.2578,
+      "history": [
+        {
+          "epoch": 1,
+          "train_loss": 1.2239,
+          "valid_pr_auc": 0.1856
+        },
+        {
+          "epoch": 2,
+          "train_loss": 1.1166,
+          "valid_pr_auc": 0.2578
+        },
+        {
+          "epoch": 3,
+          "train_loss": 1.0519,
+          "valid_pr_auc": 0.2039
+        },
+        {
+          "epoch": 4,
+          "train_loss": 1.0242,
+          "valid_pr_auc": 0.2526
+        },
+        {
+          "epoch": 5,
+          "train_loss": 0.9646,
+          "valid_pr_auc": 0.2094
+        },
+        {
+          "epoch": 6,
+          "train_loss": 0.9346,
+          "valid_pr_auc": 0.1954
+        },
+        {
+          "epoch": 7,
+          "train_loss": 0.8898,
+          "valid_pr_auc": 0.1938
+        }
+      ]
+    }
+  ],
+  "calibration": [
+    1.3539411841386595,
+    -2.774350180210581
+  ],
+  "primary_model": "radview_gru",
+  "lgbm_top_features_shap": {
+    "months_active": 0.0642,
+    "rating_slope_6m": 0.0623,
+    "rating_6m": 0.0349,
+    "cleanliness_z": 0.0272,
+    "service_z": 0.0219,
+    "rating_cum": 0.0198,
+    "rating_3m": 0.0185,
+    "service_neg_rate_change": 0.0182,
+    "checkins_3m": 0.0144,
+    "service_neg_rate_3m": 0.0112,
+    "cleanliness_neg_rate_change": 0.0107,
+    "review_velocity_ratio": 0.0102,
+    "service_neg_rate_vs_market": 0.0085,
+    "checkin_ratio": 0.0074,
+    "cleanliness_pos_rate_3m": 0.006
+  },
+  "attribution_agreement": {
+    "at_risk": {
+      "n": 42,
+      "top_aspect_agreement": 0.5476,
+      "mean_spearman": 0.5476
+    },
+    "all": {
+      "n": 220,
+      "top_aspect_agreement": 0.5545,
+      "mean_spearman": 0.6036
+    },
+    "star_impact_coefficients": {
+      "food": -1.1131,
+      "service": -1.0902,
+      "cleanliness": -0.3243,
+      "price": -0.4499,
+      "ambience": -0.3467
+    }
+  }
+}

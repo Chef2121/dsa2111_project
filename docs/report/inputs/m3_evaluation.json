@@ -1,0 +1,19 @@
+{
+  "base_rate": 0.0583,
+  "complaint_spike": {
+    "flag_rate": 0.0829,
+    "precision": 0.0366,
+    "lift": 0.63,
+    "onsets": 827,
+    "onsets_detected_pct": 18.0,
+    "median_lead_months": 4.0
+  },
+  "rating_alarm": {
+    "flag_rate": 0.0449,
+    "precision": 0.0189,
+    "lift": 0.32,
+    "onsets": 827,
+    "onsets_detected_pct": 6.4,
+    "median_lead_months": 5.0
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "restaurants": 20,
+  "planners": {
+    "rule_based": {
+      "actually_ran": [
+        "rule_based"
+      ],
+      "claims_total": 95,
+      "claims_verified": 95,
+      "groundedness": 1.0,
+      "failures_by_axis": {
+        "citation": 0,
+        "quotation": 0,
+        "relevance": 0,
+        "statistic": 0,
+        "substance": 0
+      },
+      "mean_items_per_plan": 1.65,
+      "median_latency_s": 0.265,
+      "mean_tool_calls": 4.7,
+      "mean_tokens": null
+    },
+    "adversarial": {
+      "actually_ran": [
+        "adversarial"
+      ],
+      "claims_total": 160,
+      "claims_verified": 0,
+      "groundedness": 0.0,
+      "failures_by_axis": {
+        "citation": 100,
+        "quotation": 40,
+        "relevance": 75,
+        "statistic": 40,
+        "substance": 20
+      },
+      "mean_items_per_plan": 1,
+      "median_latency_s": 0.315,
+      "mean_tool_calls": 4.7,
+      "mean_tokens": null
+    }
+  },
+  "note": "Claude planner not run: ANTHROPIC_API_KEY is not set."
+}
