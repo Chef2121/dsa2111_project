@@ -90,6 +90,7 @@ def query_metrics(business_id: str, store: Store = STORE) -> dict:
             "complaint_rate_prev6m": round(float(row[f"{a}_neg_rate_3m"] - row[f"{a}_neg_rate_change"]), 4),
             "change": round(float(row[f"{a}_neg_rate_change"]), 4),
             "praise_rate_3m": round(float(row[f"{a}_pos_rate_3m"]), 4),
+            "market_median_rate": None if pd.isna(row[f"{a}_market_rate"]) else round(float(row[f"{a}_market_rate"]), 4),
             "robust_z": round(float(trow[f"{a}_z"]), 2),
             "spike": bool(trow[f"{a}_spike"]) or bool(row[f"{a}_spike_3m"]),
         }
@@ -104,11 +105,20 @@ def query_metrics(business_id: str, store: Store = STORE) -> dict:
 
 
 def run_forecast(business_id: str, store: Store = STORE) -> dict:
-    """Decline probability and the SHAP attribution of each driver group (logit units)."""
+    """Decline probability with three views of what drives it:
+
+    * ``attributions``             SHAP per driver group (logit units)
+    * ``counterfactual_risk_drop`` how much the risk would fall if the aspect were at the market norm
+    * ``star_cost``                estimated stars the aspect costs vs. the typical restaurant
+    """
     r = store.risk_latest.loc[business_id]
-    attributions = {c.split("::", 1)[1]: round(float(r[c]), 4) for c in r.index if c.startswith("attr::")}
+
+    def group(prefix):
+        return {c.split("::", 1)[1]: round(float(r[c]), 4) for c in r.index if c.startswith(prefix)}
     return {"business_id": business_id, "month": r["month"], "risk": round(float(r["risk"]), 4),
-            "risk_level": r["risk_level"], "attributions": attributions,
+            "risk_level": r["risk_level"], "base_rate": round(float(r["base_rate"]), 4),
+            "risk_lift": round(float(r["risk_lift"]), 2), "attributions": group("attr::"),
+            "counterfactual_risk_drop": group("cf::"), "star_cost": group("starcost::"),
             "top_features": json.loads(r["top_features"])}
 
 
@@ -203,3 +213,40 @@ TOOL_REGISTRY = {
     "get_evidence_reviews": get_evidence_reviews,
     "compare_peers": compare_peers,
 }
+
+# --------------------------------------------------------------------------
+# Tool definitions exposed to the LLM planner (Anthropic tool-use format).
+# The business_id is bound by the agent, so the model cannot query other restaurants.
+# --------------------------------------------------------------------------
+_ASPECT_ENUM = {"type": "string", "enum": ASPECTS}
+TOOL_SCHEMAS = [
+    {"name": "query_metrics",
+     "description": "Current rating trend and, per aspect, the share of recent reviews complaining (last 3 months vs "
+                    "the 6 months before), the market median complaint rate, praise rate, robust z-score and "
+                    "whether a complaint spike is active.",
+     "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
+    {"name": "run_forecast",
+     "description": "Calibrated probability that the rating drops >=0.3 stars over the next 3 months, with SHAP "
+                    "attributions per driver, the risk reduction if each aspect were at the market norm "
+                    "(counterfactual) and the estimated stars each aspect costs versus a typical restaurant.",
+     "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
+    {"name": "get_evidence_reviews",
+     "description": "Recent reviews whose quoted sentence is itself classified as a complaint about the aspect. "
+                    "Only reviews returned by this tool may be cited in the plan.",
+     "input_schema": {"type": "object", "properties": {"aspect": _ASPECT_ENUM,
+                                                        "k": {"type": "integer", "minimum": 1, "maximum": 5}},
+                      "required": ["aspect"], "additionalProperties": False}},
+    {"name": "compare_peers",
+     "description": "Complaint rate per aspect versus the median of comparable restaurants (same cuisine and city).",
+     "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
+]
+
+
+def execute_tool(business_id: str, name: str, args: dict) -> dict:
+    """Run one tool for the agent and return a JSON-serialisable result."""
+    if name == "get_evidence_reviews":
+        k = int(args.get("k", EVIDENCE_PER_ASPECT))
+        return {"aspect": args["aspect"], "reviews": get_evidence_reviews(business_id, args["aspect"], k=min(max(k, 1), 5))}
+    if name in ("query_metrics", "run_forecast", "compare_peers"):
+        return TOOL_REGISTRY[name](business_id)
+    raise KeyError(f"unknown tool {name}")

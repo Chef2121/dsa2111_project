@@ -20,8 +20,11 @@ DATA_DIR = Path(os.getenv("RADVIEW_DATA_DIR", ROOT / "data"))
 #   "synthetic" - the Yelp-format simulator output in data/synthetic/raw/
 # Each source gets its own working directory so results never overwrite each other.
 _YELP_DIR = DATA_DIR / "yelp"
+# Yelp is chosen when its raw files are present *or* a finished Yelp run is (e.g. teammates who only
+# received the trained-models bundle, not the 5 GB raw dataset).
 SOURCE = os.getenv("RADVIEW_SOURCE") or (
-    "yelp" if (_YELP_DIR / "yelp_academic_dataset_review.json").exists() else "synthetic")
+    "yelp" if (_YELP_DIR / "yelp_academic_dataset_review.json").exists()
+    or (DATA_DIR / "work" / "yelp" / "outputs" / "risk_latest.parquet").exists() else "synthetic")
 RAW_DIR = Path(os.getenv("RADVIEW_RAW_DIR", _YELP_DIR if SOURCE == "yelp" else DATA_DIR / "synthetic" / "raw"))
 WORK_DIR = DATA_DIR / "work" / SOURCE
 PROCESSED_DIR = WORK_DIR / "processed"  # cleaned parquet tables, panel, trends
@@ -36,7 +39,7 @@ for _d in (RAW_DIR, PROCESSED_DIR, MODELS_DIR, OUTPUTS_DIR, LABELS_DIR):
 # Slice of the real dataset used by default (CPU-friendly; override via env).
 YELP_CITY = os.getenv("RADVIEW_CITY", "Philadelphia")
 YELP_MAX_RESTAURANTS = int(os.getenv("RADVIEW_MAX_RESTAURANTS", "400"))
-YELP_START_DATE = os.getenv("RADVIEW_START_DATE", "2016-01-01")  # older reviews are not needed for 2016+ monitoring
+YELP_START_DATE = os.getenv("RADVIEW_START_DATE", "2016-01-01")  # 6 years of history keeps CPU scoring manageable
 
 # --------------------------------------------------------------------------
 # Domain constants
@@ -68,8 +71,12 @@ MIN_REVIEWS_PAST = 6
 # are the test period, the VALID_MONTHS before them validation, the rest training.
 TEST_MONTHS = 18
 VALID_MONTHS = 6
-RISK_HIGH = 0.30            # calibrated probability above which a restaurant is "high risk"
-RISK_MEDIUM = 0.15
+# Risk tiers are defined as *lift* over the base rate of declines in the training data, not as
+# fixed probabilities: real declines are rare (~6% of restaurant-months on Yelp), so a calibrated
+# model almost never outputs 30%, yet 2x the typical restaurant's risk is a meaningful warning.
+RISK_MEDIUM_LIFT = 1.5
+RISK_HIGH_LIFT = 2.0
+PLANS_TOP_N = 20               # the agent always covers at least the N riskiest active restaurants
 
 # --------------------------------------------------------------------------
 # M2 - transformer
@@ -83,5 +90,11 @@ MAX_SEQ_LEN = 128
 LLM_MODEL = os.getenv("RADVIEW_LLM_MODEL", "claude-opus-5-5")
 EVIDENCE_PER_ASPECT = 3
 EVIDENCE_LOOKBACK_MONTHS = 4
+
+# --------------------------------------------------------------------------
+# Compute device for the PyTorch models (M2 transformer, M4 GRU).
+# Default is CPU; set RADVIEW_DEVICE=cuda to opt in to a GPU.
+# --------------------------------------------------------------------------
+DEVICE = os.getenv("RADVIEW_DEVICE", "cpu")
 
 RANDOM_SEED = 42

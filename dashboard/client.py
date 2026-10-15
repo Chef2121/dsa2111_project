@@ -58,6 +58,16 @@ class Client:
     def m4_curves(self):
         return self._get("/evaluation/m4/curves") if self.base else self._svc.m4_curves()
 
+    def alerts(self):
+        return self._get("/alerts") if self.base else self._svc.alerts()
+
+    def analyse(self, texts):
+        if self.base:
+            r = requests.post(f"{self.base}/analyse", json={"texts": texts}, timeout=300)
+            r.raise_for_status()
+            return r.json()
+        return self._svc.analyse(texts)
+
     def feedback(self, bid, usefulness, comment="", aspect=None):
         if self.base:
             r = requests.post(f"{self.base}/feedback", json={"business_id": bid, "usefulness": usefulness,

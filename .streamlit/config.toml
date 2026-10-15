@@ -1,10 +1,7 @@
-# Radview dashboard theme. Charts use the light-surface palette, so the app is pinned to light mode.
-[theme]
-base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f3f2ee"
-textColor = "#0b0b0b"
+# Radview dashboard settings.
+# No [theme] block on purpose: any custom theme option pins Streamlit to that single theme,
+# whereas without one the app follows the viewer's light/dark setting and the charts
+# switch to their matching palette (see IS_DARK in dashboard/app.py).
 
 [server]
 headless = true

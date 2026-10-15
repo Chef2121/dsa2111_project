@@ -149,7 +149,8 @@ def test_verifier_accepts_grounded_and_rejects_ungrounded_claims(monkeypatch):
     import radview.m5_agent.verifier as ver
 
     monkeypatch.setattr(ver, "is_complaint", lambda sent, aspect: "rude" in sent)
-    store, metrics = _FakeStore(), {"complaint_rate_3m": 0.25, "complaint_rate_prev6m": 0.05}
+    store = _FakeStore()
+    metrics = {"rates": {"complaint_rate_3m": 0.25, "complaint_rate_prev6m": 0.05}, "stars": {"star_cost": 0.12}}
     ok = {"type": "review", "text": 'A guest says "Our server was rude and ignored us."',
           "review_ids": ["r1"], "quote": "Our server was rude and ignored us."}
     assert ver.verify_claim(ok, "b1", "service", metrics, store)["verified"]
@@ -166,6 +167,27 @@ def test_verifier_accepts_grounded_and_rejects_ungrounded_claims(monkeypatch):
                             "b1", "service", metrics, store)["verified"]
 
 
+def test_verifier_checks_star_figures_substance_and_retrieval(monkeypatch):
+    import radview.m5_agent.verifier as ver
+
+    monkeypatch.setattr(ver, "is_complaint", lambda sent, aspect: "rude" in sent)
+    store = _FakeStore()
+    metrics = {"rates": {"complaint_rate_3m": 0.25}, "stars": {"star_cost": 0.12}}
+
+    def check(claim, retrieved=None):
+        return ver.verify_claim(claim, "b1", "service", metrics, store, retrieved)
+
+    assert check({"type": "metric", "text": "This costs about 0.12 stars."})["verified"]
+    assert check({"type": "metric", "text": "This costs about 0.90 stars."})["failed_axes"] == ["statistic"]
+    assert check({"type": "metric", "text": "Service is the big problem."})["failed_axes"] == ["substance"]
+    grounded = {"type": "review", "text": "x", "review_ids": ["r1"], "quote": "Our server was rude and ignored us."}
+    assert check(grounded, retrieved={"r1"})["verified"]
+    assert check(grounded, retrieved=set())["failed_axes"] == ["citation"]   # real, but never retrieved
+    # figures inside a verbatim quote are the reviewer's, not the agent's
+    assert check({**grounded, "text": 'They said "Our server was rude and ignored us." (99%)', "quote":
+                  "Our server was rude and ignored us."})["failed_axes"] == ["statistic"]
+
+
 def test_playbook_actions_follow_detected_sub_themes():
     from radview.m5_agent.playbook import actions_for, detect_sub_themes
 
@@ -174,3 +196,30 @@ def test_playbook_actions_follow_detected_sub_themes():
     acts = actions_for("service", themes)
     assert 1 <= len(acts) <= 3 and "staffing" in acts[0]
     json.dumps(acts)
+
+
+# ---------------------------------------------------------------- M4 attribution
+def test_star_impact_recovers_a_known_cost():
+    from radview.m4_forecast.attribution import fit_star_impact
+
+    rng = np.random.default_rng(1)
+    n = 400
+    rates = {a: rng.uniform(0, 0.5, n) for a in ASPECTS}
+    stars = 4.5 - 2.0 * rates["cleanliness"] - 0.5 * rates["price"] + rng.normal(0, 0.05, n)
+    panel = pd.DataFrame({"n_reviews": 20, "mean_stars": stars, **{f"{a}_neg": rates[a] * 20 for a in ASPECTS}})
+    coefs = fit_star_impact(panel)
+    assert coefs["cleanliness"] < coefs["price"] < 0          # bigger cost for cleanliness
+    assert abs(coefs["food"]) < 0.3
+
+
+def test_typical_aspect_frame_resets_only_that_aspect():
+    from radview.m4_forecast.attribution import typical_aspect_frame
+
+    feat = pd.DataFrame({f"{a}_{s}": [0.4] for a in ASPECTS
+                         for s in ("neg_rate_3m", "neg_rate_change", "neg_rate_vs_market", "z", "spike_3m",
+                                   "market_rate")} | {"n_spiking_aspects": [2]})
+    for a in ASPECTS:
+        feat[f"{a}_market_rate"] = 0.1
+    cf = typical_aspect_frame(feat, "service")
+    assert cf.loc[0, "service_neg_rate_3m"] == 0.1 and cf.loc[0, "service_z"] == 0
+    assert cf.loc[0, "food_neg_rate_3m"] == 0.4                # other aspects untouched

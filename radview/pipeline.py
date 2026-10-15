@@ -40,7 +40,10 @@ def build_trends_and_features() -> dict:
 
     panel = build_panel()
     trends = detect(panel)
-    feat = build_features(panel, trends)
+    import pandas as pd
+
+    cities = pd.read_parquet(PROCESSED_DIR / "businesses.parquet").set_index("business_id")["city"]
+    feat = build_features(panel, trends, cities)
     feat.to_parquet(PROCESSED_DIR / "features.parquet", index=False)
     m3 = evaluate_m3(trends, feat)
     (OUTPUTS_DIR / "m3_evaluation.json").write_text(json.dumps(m3, indent=2))
@@ -82,7 +85,9 @@ def run(mode: str = "full", fast: bool = False, use_llm: bool | None = None, epo
 
     t = _step("M5 agentic action plans")
     from radview.m5_agent.agent import run_batch
+    from radview.m5_agent.cli import compare
     m5 = run_batch(use_llm=use_llm)
+    compare(20)  # rule-based vs adversarial (vs Claude when a key is set)
     timings["m5"] = time.time() - t
 
     summary = {"source": SOURCE, "mode": mode, "finished_at": datetime.now().isoformat(timespec="seconds"),
@@ -97,7 +102,8 @@ if __name__ == "__main__":
     ap.add_argument("--mode", choices=["full", "rescore"], default="full")
     ap.add_argument("--fast", action="store_true", help="skip transformer fine-tuning")
     ap.add_argument("--epochs", type=int, default=2, help="transformer fine-tuning epochs")
+    ap.add_argument("--train-size", type=int, default=6000, help="weakly-labelled reviews for transformer fine-tuning")
     ap.add_argument("--llm", dest="use_llm", action="store_true", default=None, help="force LLM drafting in M5")
     ap.add_argument("--no-llm", dest="use_llm", action="store_false", help="force deterministic M5 planner")
     args = ap.parse_args()
-    run(mode=args.mode, fast=args.fast, use_llm=args.use_llm, epochs=args.epochs)
+    run(mode=args.mode, fast=args.fast, use_llm=args.use_llm, epochs=args.epochs, train_size=args.train_size)

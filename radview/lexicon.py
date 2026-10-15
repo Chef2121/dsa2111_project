@@ -74,7 +74,7 @@ SUB_THEMES: dict[str, dict[str, set[str]]] = {
     "service": {
         "wait times": {"wait", "waited", "waiting", "slow", "minutes", "forever", "took"},
         "staff attitude": {"rude", "dismissive", "unfriendly", "attitude", "ignored", "eye"},
-        "order accuracy": {"wrong", "forgot", "missing", "mistake", "mixed"},
+        "order accuracy": {"wrong", "forgot", "missing", "mistake", "mixed", "received", "lost", "incorrect"},
     },
     "cleanliness": {
         "restrooms": {"bathroom", "bathrooms", "restroom", "restrooms"},

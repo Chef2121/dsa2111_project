@@ -10,7 +10,9 @@ evaluation harness and the scoring job swap models freely.
 * ``LexiconModel``     - the weak-labelling rule itself (baseline 1)
 * ``TfidfModel``       - TF-IDF + one logistic regression per aspect (baseline 2)
 * ``TransformerModel`` - DistilBERT encoder with one 3-way head per aspect
-                         fine-tuned on the weak labels (proposed model)
+                         fine-tuned on the weak labels (proposed model). Runs on
+                         CPU with int8-quantised inference by default; with
+                         RADVIEW_DEVICE=cuda it uses the GPU in bf16
 * ``ZeroShotLLMModel`` - zero-shot LLM prompt (baseline 3, needs an API key)
 """
 from __future__ import annotations
@@ -24,7 +26,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-from radview.config import ASPECTS, LLM_MODEL, MAX_SEQ_LEN, MODELS_DIR, RANDOM_SEED, TRANSFORMER_BASE
+from radview.config import ASPECTS, DEVICE, LLM_MODEL, MAX_SEQ_LEN, MODELS_DIR, RANDOM_SEED, TRANSFORMER_BASE
 from radview.m2_aspects.weak_labels import label_review
 
 N_CLS = 3
@@ -95,12 +97,18 @@ class TransformerModel:
 
         torch.set_num_threads(max(1, os.cpu_count() or 1))
         self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if DEVICE == "cuda" and torch.cuda.is_available() else "cpu"
         self.tok = AutoTokenizer.from_pretrained(base)
         self.encoder = AutoModel.from_pretrained(base)
         self.head = torch.nn.Linear(self.encoder.config.hidden_size, len(ASPECTS) * N_CLS)
         self.encoder.to(self.device)
         self.head.to(self.device)
+
+    def _autocast(self):
+        """bf16 mixed precision on CUDA (Ampere+, e.g. RTX 30xx): ~2x faster, half the activation memory,
+        and unlike fp16 needs no gradient scaler. A no-op context on CPU."""
+        enabled = self.device == "cuda" and self.torch.cuda.is_bf16_supported()
+        return self.torch.autocast(device_type="cuda", dtype=self.torch.bfloat16, enabled=enabled)
 
     def _forward(self, batch_texts, encoder=None):
         enc = self.tok(list(batch_texts), truncation=True, max_length=MAX_SEQ_LEN, padding=True,
@@ -128,10 +136,11 @@ class TransformerModel:
             order = rng.permutation(n)
             for s in range(0, n, batch_size):
                 idx = order[s:s + batch_size]
-                logits = self._forward(texts[idx])
                 yb = y_t[idx].to(self.device)
-                loss = sum(torch.nn.functional.cross_entropy(logits[:, i], yb[:, i], weight=w[i])
-                           for i in range(len(ASPECTS)))
+                with self._autocast():
+                    logits = self._forward(texts[idx]).float()
+                    loss = sum(torch.nn.functional.cross_entropy(logits[:, i], yb[:, i], weight=w[i])
+                               for i in range(len(ASPECTS)))
                 opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
@@ -152,18 +161,19 @@ class TransformerModel:
                 copy.deepcopy(self.encoder).eval(), {self.torch.nn.Linear}, dtype=self.torch.qint8)
         return self._qencoder
 
-    def predict_proba(self, texts, stars=None, batch_size: int = 128, quantize: bool = True):
+    def predict_proba(self, texts, stars=None, batch_size: int | None = None, quantize: bool = True):
         torch = self.torch
+        batch_size = batch_size or (256 if self.device == "cuda" else 128)
         self.encoder.eval()
         encoder = self._inference_encoder() if quantize else self.encoder
         texts = list(texts)
         # sort by length so padding is minimal, then restore order
         order = np.argsort([len(t) for t in texts])
         out = np.zeros((len(texts), len(ASPECTS), N_CLS), dtype=np.float32)
-        with torch.inference_mode():
+        with torch.inference_mode(), self._autocast():
             for s in range(0, len(texts), batch_size):
                 idx = order[s:s + batch_size]
-                logits = self._forward([texts[i] for i in idx], encoder)
+                logits = self._forward([texts[i] for i in idx], encoder).float()
                 out[idx] = torch.softmax(logits, -1).cpu().numpy()
         return out
 

@@ -7,4 +7,3 @@ data/
 *.docx
 *.pdf
 k8s/
-tests/
