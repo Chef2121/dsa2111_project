@@ -15,6 +15,11 @@ your laptop ──(SSH tunnel)──►  RONIN machine (AWS EC2 t3.large, Ubuntu
 > **Current state of the shared machine:** this setup is already deployed and starts by itself whenever the
 > machine is started. You only need sections 1 and 5 to use it. Use **either** k3s **or** Docker Compose on the
 > machine, never both — they would run two copies of the app on 8 GB of memory.
+>
+> **Where the code is:** on the group machine the deployed code lives in `~/radview/dsa2111_project` — a plain
+> copy of the repo, **not** a git clone, so `git pull` does not work there. The app itself only needs the built
+> image and the data volume. To redeploy a newer version, do steps 2–4 once (a fresh clone in `~/dsa2111_project`
+> and the deploy script); the trained models already on the volume are kept.
 
 ## Before you start — budget
 
@@ -42,8 +47,8 @@ Use the connection details from the RONIN email/*Machines* page — plain SSH wi
 ssh -i ~/path/to/dsa2111-g10-key.pem ubuntu@dsa2111-group10.nus.cloud
 ```
 
-Everyone logs in as `ubuntu`, so **don't delete other members' folders**, and leave `~/dsa2111_project` alone
-unless you are updating the deployment.
+Everyone logs in as `ubuntu`, so **don't delete other members' folders**, and leave `~/radview` (and
+`~/dsa2111_project`, if you create it) alone unless you are updating the deployment.
 
 ## 2. Get the code (first time only)
 
@@ -120,7 +125,7 @@ how RONIN should expose web apps for your project, and restrict access to NUS ad
 | Logs | `kubectl -n radview logs deploy/radview-api -f` (or `deploy/radview-dashboard`) |
 | Restart the app | `kubectl -n radview rollout restart deploy/radview-api deploy/radview-dashboard` |
 | Stop the app (keep the machine on) | `kubectl -n radview scale deploy --all --replicas=0` (undo: `bash scripts/deploy_ronin_k3s.sh`) |
-| Update to the latest code | `cd ~/dsa2111_project && git pull && bash scripts/deploy_ronin_k3s.sh` |
+| Update to the latest code | `cd ~/dsa2111_project && git pull && bash scripts/deploy_ronin_k3s.sh` (needs the git clone from step 2 — the current `~/radview` copy can't `git pull`) |
 | Where the data lives | `kubectl get pv` → the `radview-data` volume under `/var/lib/rancher/k3s/storage/` |
 | Enable Claude-written plans | `kubectl -n radview create secret generic radview-secrets --from-literal=ANTHROPIC_API_KEY=sk-ant-... --dry-run=client -o yaml \| kubectl apply -f -` then restart the app |
 | Check disk space | `df -h` and `docker system df` (free space with `docker image prune`) |
