@@ -41,11 +41,49 @@ declines, and complaint spikes do not anticipate declines at monthly granularity
 
 ---
 
-## Quick start (local)
+## Run it with the already-trained models (group members start here)
 
-> **Group members:** to run the dashboard with the already-trained models (no retraining), follow
-> **[docs/RUN_WITH_TRAINED_MODELS.md](docs/RUN_WITH_TRAINED_MODELS.md)**.
+No retraining needed — about 10 minutes. You need this repo plus the private bundle
+**`Radview-trained-models-yelp.zip`** (~320 MB, on the group drive; it contains Yelp review text, so keep it
+within the group and never commit it).
 
+**1. Get the code and install** (Python 3.10/3.11; on Windows tick *"Add python.exe to PATH"* when installing Python)
+
+```powershell
+git clone https://github.com/Chef2121/dsa2111_project.git
+cd dsa2111_project
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1          # macOS/Linux: source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+**2. Unzip the bundle into the `dsa2111_project` folder**, so that `data/` sits next to this README
+(`data/work/yelp/models`, `data/work/yelp/outputs`, …). Check it worked — this should print `yelp 327`:
+
+```powershell
+python -c "from radview.config import SOURCE; from radview import service; print(SOURCE, len(service.list_restaurants()))"
+```
+
+**3. Run**
+
+| What | Command | Open |
+|---|---|---|
+| Dashboard | `python -m streamlit run dashboard/app.py` | http://localhost:8501 |
+| REST API + docs | `python -m uvicorn radview.api.main:app --port 8000` | http://localhost:8000/docs |
+| Tests (23) | `python -m pytest -q` | — |
+| An action plan in the terminal | `python -m radview.m5_agent.cli` | — |
+
+**Test the models yourself:** dashboard → **Try a review** (paste any review, see the aspect labels and the
+complaint sentence), **Portfolio** → click a restaurant (risk, drivers, verified action plan), **Model
+performance** (all evaluation results). Keep the terminal open while using the dashboard — closing it gives
+*"site cannot be reached"*.
+
+The full guide — macOS/Linux notes, a 5-minute presentation demo script, re-running evaluations, Claude/Docker
+options and troubleshooting — is **[docs/RUN_WITH_TRAINED_MODELS.md](docs/RUN_WITH_TRAINED_MODELS.md)**.
+
+---
+
+## Quick start: train everything from scratch
 
 Requires Python 3.10+. Runs on CPU (default). `RADVIEW_DEVICE=cuda` opts in to a GPU.
 
