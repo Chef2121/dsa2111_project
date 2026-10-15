@@ -183,6 +183,9 @@ def _verdict(info, m, fc, plan: dict | None = None) -> str:
             f"about it{market}.")
 
 
+PLANNER_BADGE = {"claude": "CLAUDE AGENT", "open_model": "OPEN-MODEL AGENT"}
+
+
 def _plan_section(bid: str):
     with st.spinner("Running the agent…"):
         plan = load("plan", bid)
@@ -190,9 +193,9 @@ def _plan_section(bid: str):
     head = st.columns([5, 1])
     planner = plan.get("planner", "rule_based")
     head[0].markdown(f"### 🧭 What to do first &nbsp; <span style='font-size:0.75rem;border:1px solid {MUTED};"
-                     f"border-radius:8px;padding:1px 8px'>{'CLAUDE AGENT' if planner == 'claude' else 'RULE-BASED'}</span>",
+                     f"border-radius:8px;padding:1px 8px'>{PLANNER_BADGE.get(planner, 'RULE-BASED')}</span>",
                      unsafe_allow_html=True)
-    if head[1].button("↻ Re-run", help="Re-run the agent (uses Claude if an API key is configured)"):
+    if head[1].button("↻ Re-run", help="Re-run the agent (uses the LLM planner if one is configured)"):
         load.clear()
         client().plan(bid, refresh=True)
         st.rerun()

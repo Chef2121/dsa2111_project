@@ -17,6 +17,11 @@ data:
   RADVIEW_CITY: Philadelphia
   RADVIEW_MAX_RESTAURANTS: "400"
   RADVIEW_START_DATE: "2016-01-01"
+  # M5 LLM planner: "anthropic" (Claude, needs the secret below) or "open" (free open-weight model
+  # behind an OpenAI-compatible endpoint, e.g. an Ollama Service in this namespace).
+  RADVIEW_LLM_PROVIDER: anthropic
+  RADVIEW_OPEN_LLM_URL: http://ollama:11434/v1
+  RADVIEW_OPEN_LLM_MODEL: qwen2.5:7b
 ---
 # Optional: enables Claude-drafted action plans in M5. Create with
 #   kubectl -n radview create secret generic radview-secrets --from-literal=ANTHROPIC_API_KEY=...

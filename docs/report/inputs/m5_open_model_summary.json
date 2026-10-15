@@ -1,0 +1,44 @@
+{
+  "model": "qwen2.5:7b",
+  "gpu": "NVIDIA T4 (AWS g4dn.xlarge via NUS RONIN)",
+  "restaurants": 20,
+  "plans_fully_verified": 12,
+  "plans_with_no_verified_claim": 4,
+  "plans_redrafted_after_verifier_feedback": 8,
+  "repetition_loop_retries": 1,
+  "model_chosen_tool_calls_per_plan": 4.4,
+  "model_chosen_tool_calls_by_tool": {
+    "get_evidence_reviews": 51,
+    "compare_peers": 24,
+    "run_forecast": 11,
+    "query_metrics": 2
+  },
+  "rejected_claims": 15,
+  "owner_visible_items": 22,
+  "owner_visible_items_with_verified_quote": 11,
+  "median_latency_s": 14.52,
+  "rejected_examples_model_written": {
+    "citation": {
+      "claim": "The server was very slow and unresponsive, making the experience quite frustrating.",
+      "reasons": [
+        "citation: no review cited",
+        "quotation: quote not found verbatim in cited reviews"
+      ]
+    },
+    "statistic": {
+      "claim": "Our food quality is below the market median, with a 24.8% lower complaint rate compared to peers.",
+      "reasons": [
+        "statistic: figure 24.8% not supported by the metrics"
+      ]
+    },
+    "substance": {
+      "claim": "Our cleanliness score is currently at the market median.",
+      "reasons": [
+        "substance: metric claim states no checkable figure"
+      ]
+    }
+  },
+  "note": "Aggregated from the open-model plans of `python -m radview.m5_agent.cli --compare 20` with RADVIEW_LLM_PROVIDER=open; contains no review text (examples are claims the model wrote that the verifier rejected).",
+  "rule_based_owner_visible_items": 33,
+  "rule_based_items_with_verified_quote": 24
+}

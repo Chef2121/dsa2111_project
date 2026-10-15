@@ -16,9 +16,10 @@
         "substance": 0
       },
       "mean_items_per_plan": 1.65,
-      "median_latency_s": 0.265,
+      "median_latency_s": 0.22999999999999998,
       "mean_tool_calls": 4.7,
-      "mean_tokens": null
+      "mean_tokens": null,
+      "llm_model": null
     },
     "adversarial": {
       "actually_ran": [
@@ -35,10 +36,30 @@
         "substance": 20
       },
       "mean_items_per_plan": 1,
-      "median_latency_s": 0.315,
+      "median_latency_s": 0.27,
       "mean_tool_calls": 4.7,
-      "mean_tokens": null
+      "mean_tokens": null,
+      "llm_model": null
+    },
+    "open_model": {
+      "actually_ran": [
+        "open_model"
+      ],
+      "claims_total": 48,
+      "claims_verified": 33,
+      "groundedness": 0.6875,
+      "failures_by_axis": {
+        "citation": 8,
+        "quotation": 8,
+        "relevance": 0,
+        "statistic": 1,
+        "substance": 6
+      },
+      "mean_items_per_plan": 1.1,
+      "median_latency_s": 14.52,
+      "mean_tool_calls": 9.8,
+      "mean_tokens": 5980,
+      "llm_model": "qwen2.5:7b"
     }
-  },
-  "note": "Claude planner not run: ANTHROPIC_API_KEY is not set."
+  }
 }

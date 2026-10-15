@@ -223,3 +223,32 @@ def test_typical_aspect_frame_resets_only_that_aspect():
     cf = typical_aspect_frame(feat, "service")
     assert cf.loc[0, "service_neg_rate_3m"] == 0.1 and cf.loc[0, "service_z"] == 0
     assert cf.loc[0, "food_neg_rate_3m"] == 0.4                # other aspects untouched
+
+
+# ---------------------------------------------------------------- M5 open-model client
+def test_open_llm_helpers_repair_format_not_content():
+    from radview.m5_agent.open_llm import normalise_plan, parse_arguments, plan_from_text, to_openai_tools
+
+    schema = {"type": "object", "properties": {}}
+    assert to_openai_tools([{"name": "t", "description": "d", "input_schema": schema}]) == [
+        {"type": "function", "function": {"name": "t", "description": "d", "parameters": schema}}]
+    assert parse_arguments('{"aspect": "food"}') == {"aspect": "food"}
+    assert parse_arguments({"aspect": "food"}) == {"aspect": "food"} and parse_arguments("") == {}
+    with pytest.raises(ValueError):
+        parse_arguments("[1, 2]")
+
+    # a plan written as text instead of a submit_plan call is recovered
+    assert plan_from_text('Plan: {"name": "submit_plan", "arguments": {"items": []}} Done.') == {"items": []}
+    assert plan_from_text("I could not find any problems.") is None
+
+    raw = {"summary": "s", "items": json.dumps([
+        {"aspect": "Service", "headline": "h", "actions": "Add a server on Fridays", "claims": [
+            {"text": "t", "review_ids": "r1", "quote": "q"},
+            {"type": "metric", "text": "23% of reviews", "quote": ""}]},
+        {"aspect": "parking", "claims": []}])}
+    plan = normalise_plan(raw)
+    assert plan["summary"] == "s" and [it["aspect"] for it in plan["items"]] == ["service"]  # unknown aspect dropped
+    item = plan["items"][0]
+    assert item["actions"] == ["Add a server on Fridays"]
+    assert item["claims"][0] == {"type": "review", "text": "t", "review_ids": ["r1"], "quote": "q"}
+    assert item["claims"][1] == {"type": "metric", "text": "23% of reviews", "review_ids": [], "quote": None}
