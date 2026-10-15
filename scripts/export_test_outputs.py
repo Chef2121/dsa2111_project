@@ -84,6 +84,8 @@ def section_index() -> list[str]:
         ["Action plans, batch (M5)", "Sec. IV-G", "`python -m radview.m5_agent.agent`", "`m5_evaluation.json`"],
         ["Planner comparison (M5)", "Table VIII", "`python -m radview.m5_agent.cli --compare 20`",
          "`m5_planner_comparison.json`"],
+        ["Open-model planner detail (M5)", "Sec. IV-G",
+         "`RADVIEW_LLM_PROVIDER=open python -m radview.m5_agent.cli --compare 20`", "`m5_open_model_summary.json`"],
         ["Automated tests", "Sec. IV-H", "`python -m pytest -v`", "run when this file is generated"],
     ]
     return ["## 1. Index", "", "All source files are in [`docs/report/inputs/`](report/inputs/). Every run uses fixed "
@@ -235,6 +237,24 @@ def section_m5() -> list[str]:
                    v["mean_items_per_plan"], v["median_latency_s"], v["mean_tool_calls"]] for k, v in c["planners"].items()])
     if c.get("note"):
         out += [f"*{c['note']}*", ""]
+    if (INP / "m5_open_model_summary.json").exists():
+        o = load("m5_open_model_summary.json")
+        out += [f"### 6.3 Open-model planner in detail ({o['model']} on {o['gpu']})", ""]
+        out += table(["Quantity", "Value"], [
+            ["Plans fully verified", f"{o['plans_fully_verified']} of {o['restaurants']}"],
+            ["Plans with no verified claim", o["plans_with_no_verified_claim"]],
+            ["Plans redrafted after verifier feedback", o["plans_redrafted_after_verifier_feedback"]],
+            ["Repetition-loop retries", o["repetition_loop_retries"]],
+            ["Tool calls the model chose per plan", o["model_chosen_tool_calls_per_plan"]],
+            ["… by tool", ", ".join(f"{k} × {v}" for k, v in o["model_chosen_tool_calls_by_tool"].items())],
+            ["Owner-visible items (open model / rule-based)",
+             f"{o['owner_visible_items']} / {o['rule_based_owner_visible_items']}"],
+            ["… backed by a verified quotation",
+             f"{o['owner_visible_items_with_verified_quote']} / {o['rule_based_items_with_verified_quote']}"],
+        ])
+        out += ["Examples of claims the model wrote and the verifier rejected:", ""]
+        out += [f"- **{axis}**: \"{e['claim']}\" — {'; '.join(e['reasons'])}"
+                for axis, e in o["rejected_examples_model_written"].items()] + [""]
     return out
 
 

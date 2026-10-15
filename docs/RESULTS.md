@@ -55,10 +55,11 @@ Planner comparison on the 20 riskiest restaurants:
 
 | Planner | Groundedness | Claims | Rejected: citation / quotation / relevance / statistic / substance | Items per plan | Median latency (s) | Tool calls |
 |---|---|---|---|---|---|---|
-| rule_based | 100.0% | 95 | 0 / 0 / 0 / 0 / 0 | 1.65 | 0.265 | 4.7 |
-| adversarial | 0.0% | 160 | 100 / 40 / 75 / 40 / 20 | 1 | 0.315 | 4.7 |
+| rule_based | 100.0% | 95 | 0 / 0 / 0 / 0 / 0 | 1.65 | 0.23 | 4.7 |
+| adversarial | 0.0% | 160 | 100 / 40 / 75 / 40 / 20 | 1 | 0.27 | 4.7 |
+| open_model | 68.8% | 48 | 8 / 8 / 0 / 1 / 6 | 1.1 | 14.52 | 9.8 |
 
-_Claude planner not run: ANTHROPIC_API_KEY is not set._
+_open_model = Qwen 2.5 7B via Ollama on one NVIDIA T4 GPU (`RADVIEW_LLM_PROVIDER=open`); the Claude planner was not run (no API key). Details: [TEST_OUTPUTS.md §6.3](TEST_OUTPUTS.md)._
 
 ## Data source: `synthetic`
 
