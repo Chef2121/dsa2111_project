@@ -43,6 +43,10 @@ declines, and complaint spikes do not anticipate declines at monthly granularity
 
 ## Quick start (local)
 
+> **Group members:** to run the dashboard with the already-trained models (no retraining), follow
+> **[docs/RUN_WITH_TRAINED_MODELS.md](docs/RUN_WITH_TRAINED_MODELS.md)**.
+
+
 Requires Python 3.10+. Runs on CPU (default). `RADVIEW_DEVICE=cuda` opts in to a GPU.
 
 ```bash
