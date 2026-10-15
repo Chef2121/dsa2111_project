@@ -1,0 +1,14 @@
+{
+  "restaurants": 397,
+  "rows_read": 6990280,
+  "rows_kept_restaurants": 312317,
+  "dropped_invalid_or_empty": 158635,
+  "dropped_duplicates": 287,
+  "dropped_partial_last_month": 746,
+  "reviews_final": 152649,
+  "checkin_business_months": 44515,
+  "tip_business_months": 20232,
+  "date_min": "2016-01-01 00:23:55",
+  "date_max": "2021-12-31 23:09:12",
+  "mean_stars": 4.009
+}
