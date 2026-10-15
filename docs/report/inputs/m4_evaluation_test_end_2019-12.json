@@ -1,0 +1,101 @@
+{
+  "split": {
+    "train": "2016-01..2017-12",
+    "valid": "2018-01..2018-06",
+    "test": "2018-07..2019-12",
+    "n_train": 8737,
+    "n_valid": 2226,
+    "n_test": 6524,
+    "pos_rate_train": 0.0559,
+    "pos_rate_test": 0.0601
+  },
+  "results": {
+    "majority": {
+      "auroc": 0.5,
+      "pr_auc": 0.0601,
+      "brier": 0.0565,
+      "precision_at_10pct": 0.0537,
+      "recall_at_10pct": 0.0893,
+      "early_warning": null
+    },
+    "current_negativity": {
+      "auroc": 0.5616,
+      "pr_auc": 0.0785,
+      "brier": 0.0564,
+      "precision_at_10pct": 0.1028,
+      "recall_at_10pct": 0.1709,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 51.7,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.75
+      }
+    },
+    "rating_logreg": {
+      "auroc": 0.7107,
+      "pr_auc": 0.163,
+      "brier": 0.0547,
+      "precision_at_10pct": 0.1871,
+      "recall_at_10pct": 0.3112,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 49.1,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.5
+      }
+    },
+    "rating_lgbm": {
+      "auroc": 0.6222,
+      "pr_auc": 0.0898,
+      "brier": 0.0559,
+      "precision_at_10pct": 0.1135,
+      "recall_at_10pct": 0.1888,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 42.2,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.96
+      }
+    },
+    "sentiment_lgbm": {
+      "auroc": 0.6078,
+      "pr_auc": 0.0872,
+      "brier": 0.056,
+      "precision_at_10pct": 0.1135,
+      "recall_at_10pct": 0.1888,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 61.3,
+        "median_lead_months": 5.0,
+        "mean_lead_months": 4.15
+      }
+    },
+    "radview_lgbm": {
+      "auroc": 0.632,
+      "pr_auc": 0.0904,
+      "brier": 0.056,
+      "precision_at_10pct": 0.1181,
+      "recall_at_10pct": 0.1964,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 67.0,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.98
+      }
+    },
+    "radview_gru": {
+      "auroc": 0.6863,
+      "pr_auc": 0.1469,
+      "brier": 0.0553,
+      "precision_at_10pct": 0.1748,
+      "recall_at_10pct": 0.2908,
+      "early_warning": {
+        "onsets": 230,
+        "detected_pct": 48.7,
+        "median_lead_months": 3.0,
+        "mean_lead_months": 3.26
+      }
+    }
+  },
+  "test_end": "2019-12"
+}

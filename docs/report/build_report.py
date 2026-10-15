@@ -1,14 +1,16 @@
 """Build Group10-report-DSA2111.docx (IEEE conference style, 10 pt Times New Roman, two columns).
 
-Every results table is read from the pipeline's evaluation outputs (data/work/yelp/outputs and
-data/work/synthetic/outputs), so numbers cannot drift from the code. Run make_figures.py first.
+Every results table is read from the snapshots of the pipeline's evaluation outputs in docs/report/inputs,
+so numbers cannot drift from the code and the report rebuilds without the (git-ignored) data folder.
+Run make_figures.py first; run snapshot_inputs.py after a new pipeline run to refresh the snapshots.
 
-    python docs/report/build_report.py
+    python docs/report/build_report.py [output.docx]
 """
 from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 from docx import Document
@@ -22,14 +24,13 @@ from docx.shared import Inches, Mm, Pt, RGBColor
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 FIGS = HERE / "figs"
-OUT = HERE / "Group10-report-DSA2111.docx"
-Y = ROOT / "data" / "work" / "yelp" / "outputs"
-S = ROOT / "data" / "work" / "synthetic" / "outputs"
+OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "Group10-report-DSA2111.docx"  # optional output path
+Y = HERE / "inputs"   # committed snapshots of the pipeline outputs (see snapshot_inputs.py)
 m2 = json.loads((Y / "m2_evaluation.json").read_text())
 m3 = json.loads((Y / "m3_evaluation.json").read_text())
 m4 = json.loads((Y / "m4_evaluation.json").read_text())
 m5c = json.loads((Y / "m5_planner_comparison.json").read_text())
-m4s = json.loads((S / "m4_evaluation.json").read_text())
+m4s = json.loads((Y / "m4_evaluation_synthetic.json").read_text())
 m4pre = json.loads((Y / "m4_evaluation_test_end_2019-12.json").read_text())
 
 FONT = "Times New Roman"

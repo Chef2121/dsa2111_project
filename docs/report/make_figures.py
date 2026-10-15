@@ -1,4 +1,9 @@
-"""Figures for the Group 10 report (generated from the pipeline outputs)."""
+"""Figures for the Group 10 report.
+
+Fig. 1 architecture and Fig. 2 agent workflow are drawn here; Fig. 3 (dashboard) is composed from the two
+screenshots in figs/src; Fig. 4 (M2 per-aspect F1) and Fig. 5 (M4 precision-recall) are computed from the
+result snapshots in docs/report/inputs. Run:  python docs/report/make_figures.py
+"""
 import json
 from pathlib import Path
 
@@ -12,7 +17,10 @@ from sklearn.metrics import precision_recall_curve
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent / "figs"
 OUT.mkdir(exist_ok=True)
-YELP = ROOT / "data" / "work" / "yelp" / "outputs"
+# Inputs: the committed snapshots in docs/report/inputs (so figures rebuild from the repo alone);
+# run snapshot_inputs.py after a new pipeline run to refresh them from data/work/yelp/outputs.
+YELP = Path(__file__).resolve().parent / "inputs"
+SRC = OUT / "src"   # raw dashboard screenshots for Fig. 5
 plt.rcParams.update({"font.family": "Times New Roman", "font.size": 8, "axes.titlesize": 8, "axes.labelsize": 8,
                      "legend.fontsize": 7, "xtick.labelsize": 7, "ytick.labelsize": 7, "axes.spines.top": False,
                      "axes.spines.right": False, "savefig.dpi": 300, "savefig.bbox": "tight"})
@@ -107,4 +115,13 @@ ax.axhline(tp["decline"].mean(), color="#52514e", lw=0.7, ls=":", label=f"Base r
 ax.set_xlabel("Recall"); ax.set_ylabel("Precision"); ax.set_xlim(0, 1); ax.set_ylim(0, 0.6)
 ax.grid(color="#e6e5e0", lw=0.5); ax.legend(frameon=False, fontsize=6)
 fig.savefig(OUT / "fig4_m4_pr.png"); plt.close(fig)
+# ---------------------------------------------------------------- Fig 5 (report Fig. 3): dashboard screenshot
+from PIL import Image
+
+top = Image.open(SRC / "dashboard_top.jpg").crop((205, 110, 760, 478))      # verdict, KPIs, charts
+plan = Image.open(SRC / "dashboard_plan.jpg").crop((200, 285, 755, 563))    # top of the action plan
+dash = Image.new("RGB", (max(top.width, plan.width), top.height + plan.height + 8), "white")
+dash.paste(top, (0, 0))
+dash.paste(plan, (0, top.height + 8))
+dash.save(OUT / "fig5_dashboard.png", dpi=(220, 220))
 print("figures ->", OUT)

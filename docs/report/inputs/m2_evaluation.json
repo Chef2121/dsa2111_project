@@ -1,0 +1,109 @@
+{
+  "selected_model": "distilbert_finetuned",
+  "selected_on": "semeval2014",
+  "weak_label_distribution": {
+    "food": [
+      5830,
+      26466,
+      7704
+    ],
+    "service": [
+      17072,
+      17439,
+      5489
+    ],
+    "cleanliness": [
+      37393,
+      1586,
+      1021
+    ],
+    "price": [
+      29010,
+      7403,
+      3587
+    ],
+    "ambience": [
+      28636,
+      9181,
+      2183
+    ]
+  },
+  "benchmarks": {
+    "semeval2014": {
+      "n": 800,
+      "aspects": [
+        "food",
+        "service",
+        "price",
+        "ambience"
+      ]
+    }
+  },
+  "results": {
+    "semeval2014": [
+      {
+        "model": "lexicon_rule",
+        "n_test": 800,
+        "macro_f1": 0.6603,
+        "complaint_f1": 0.4141,
+        "macro_f1_per_aspect": {
+          "food": 0.5985,
+          "service": 0.7529,
+          "price": 0.7161,
+          "ambience": 0.5736
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.3529,
+          "service": 0.5263,
+          "price": 0.5333,
+          "ambience": 0.2439
+        },
+        "inference_ms_per_review": 0.21
+      },
+      {
+        "model": "tfidf_logreg",
+        "n_test": 800,
+        "macro_f1": 0.7273,
+        "complaint_f1": 0.5124,
+        "macro_f1_per_aspect": {
+          "food": 0.7002,
+          "service": 0.8313,
+          "price": 0.7734,
+          "ambience": 0.6045
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5202,
+          "service": 0.6891,
+          "price": 0.6129,
+          "ambience": 0.2273
+        },
+        "inference_ms_per_review": 0.06
+      },
+      {
+        "model": "distilbert_finetuned",
+        "n_test": 800,
+        "macro_f1": 0.7369,
+        "complaint_f1": 0.5674,
+        "macro_f1_per_aspect": {
+          "food": 0.6988,
+          "service": 0.8642,
+          "price": 0.7483,
+          "ambience": 0.6365
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5578,
+          "service": 0.746,
+          "price": 0.6182,
+          "ambience": 0.3478
+        },
+        "inference_ms_per_review": 6.49,
+        "train_seconds": 3260.7,
+        "train_size": 6000
+      },
+      {
+        "model": "zero_shot_llm",
+        "skipped": "ANTHROPIC_API_KEY not set"
+      }
+    ]
+  }
+}
