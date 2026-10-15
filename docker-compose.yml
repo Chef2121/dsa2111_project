@@ -5,6 +5,8 @@
 x-common: &common
   build: .
   image: radview:latest
+  # Come back up automatically after the host restarts (e.g. a RONIN machine stopped overnight).
+  restart: unless-stopped
   volumes:
     - ./data:/data
   environment:
@@ -17,6 +19,7 @@ services:
     <<: *common
     command: ["python", "-m", "radview.pipeline", "--mode", "full"]
     profiles: ["jobs"]
+    restart: "no"        # one-off job
 
   api:
     <<: *common
