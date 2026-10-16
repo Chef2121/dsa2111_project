@@ -32,18 +32,23 @@ def to_openai_tools(schemas: list[dict]) -> list[dict]:
 RETRY_TEMPERATURE = 0.4
 
 
-def chat(base_url: str, model: str, messages: list[dict], tools: list[dict], temperature: float = 0.0) -> dict:
-    """One chat-completions call. ``RADVIEW_OPEN_LLM_API_KEY`` is sent only if set (hosted endpoints)."""
+def chat(base_url: str, model: str, messages: list[dict], tools: list[dict] | None = None,
+         temperature: float = 0.0) -> dict:
+    """One chat-completions call (tools optional). ``RADVIEW_OPEN_LLM_API_KEY`` is sent only if set (hosted endpoints)."""
     key = os.getenv("RADVIEW_OPEN_LLM_API_KEY")
     headers = {"Authorization": f"Bearer {key}"} if key else {}
+    body = {"model": model, "messages": messages, "temperature": temperature}
+    if tools:
+        body["tools"] = tools
     resp = requests.post(base_url.rstrip("/") + "/chat/completions", headers=headers, timeout=OPEN_LLM_TIMEOUT,
-                         json={"model": model, "messages": messages, "tools": tools, "temperature": temperature})
+                         json=body)
     if not resp.ok:  # keep the server's explanation, e.g. Ollama's "token repeat limit reached"
         raise requests.HTTPError(f"{resp.status_code}: {resp.text[:300]}", response=resp)
     return resp.json()
 
 
-def chat_with_retry(base_url: str, model: str, messages: list[dict], tools: list[dict]) -> tuple[dict, bool]:
+def chat_with_retry(base_url: str, model: str, messages: list[dict],
+                    tools: list[dict] | None = None) -> tuple[dict, bool]:
     """Greedy decoding first (reproducible); on a server error retry once with some sampling.
 
     Small models decoding greedily can fall into a repetition loop, which Ollama aborts with a 500
