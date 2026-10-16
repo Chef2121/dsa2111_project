@@ -282,12 +282,12 @@ add_runs(p, (
     "intervention, and an agent built with LangGraph turns them into a ranked action plan whose every claim is checked "
     "by a mechanical five-axis verifier before an owner sees it. The system runs as Docker containers on Kubernetes in AWS "
     "behind a REST API and an owner dashboard. On 152,649 reviews of 397 Philadelphia restaurants (2016–2021), the "
-    "aspect model reaches macro-F1 0.737 and complaint-F1 0.567 on human-labelled SemEval-2014 sentences, ahead of "
-    "TF-IDF and lexicon baselines; all 265 claims in 53 real action plans pass verification while 100% of claims from "
+    "aspect model reaches macro-F1 0.737 on human-labelled SemEval-2014 sentences, ahead of TF-IDF and lexicon "
+    "baselines but behind a zero-shot open LLM (0.842) that is ~127× slower; all 265 claims in 53 real action plans pass verification while 100% of claims from "
     "an adversarial planner are rejected, and a free open model (Qwen 2.5 7B) acting as the agent gets only 69% of "
     "its claims verified. On an out-of-time, COVID-era test period the GRU (AUROC 0.727) is the best "
     "learned multi-signal model, but a rating-trend logistic regression is marginally better (0.738), and complaint "
-    "spikes do not anticipate declines at monthly granularity. We report these negative results and discuss why."),
+    "spikes do not anticipate declines at monthly granularity."),
     size=9, bold=True)
 p = doc.add_paragraph()
 p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -463,7 +463,10 @@ para("Three models are trained on these labels. The *lexicon rule* is the labell
      "trained with class-weighted cross-entropy (weights ∝ inverse class frequency^0.5) for two epochs on 6,000 "
      "reviews (sequence length 128, AdamW, learning rate 3×10⁻⁵, warm-up and linear decay). For serving on CPU the "
      "encoder's linear layers are dynamically quantised to int8, which cut inference time by about 30% in our "
-     "measurements. The model with the best macro-F1 on the benchmark is selected automatically and scores every review.")
+     "measurements. The model with the best macro-F1 on the benchmark is selected automatically and scores every review. "
+     "As an untrained fourth baseline, a zero-shot LLM — the same open Qwen 2.5 7B model the agent uses, served by "
+     "Ollama on a T4 GPU — is prompted to label each text directly and answer with a JSON object; it is "
+     "evaluated but not used for scoring, because it needs a GPU and is far slower.")
 
 h2("M3 — Emerging Complaint Detection")
 para("For restaurant *i*, aspect *a* and month *t*, the complaint rate is the share of reviews labelled negative on "
@@ -577,27 +580,42 @@ para(f"All experiments ran on a 16-thread laptop CPU without a GPU. Forecasting 
 h2("Aspect Classification (M2)")
 res = {r["model"]: r for r in m2["results"]["semeval2014"] if "macro_f1" in r}
 lab = {"lexicon_rule": "Lexicon rule (weak labeller)", "tfidf_logreg": "TF-IDF + logistic regression",
-       "distilbert_finetuned": "**DistilBERT, fine-tuned (ours)**"}
+       "distilbert_finetuned": "**DistilBERT, fine-tuned (ours)**", "zero_shot_llm": "Zero-shot Qwen 2.5 7B (GPU)"}
+zs = res.get("zero_shot_llm")
 table("Aspect sentiment on SemEval-2014 restaurant test set",
       ["Model", "Macro-F1", "Compl.-F1", "ms/sent."],
       [[lab[k], f3(res[k]["macro_f1"]), f3(res[k]["complaint_f1"]), f"{res[k]['inference_ms_per_review']:.2f}"]
-       for k in ("lexicon_rule", "tfidf_logreg", "distilbert_finetuned")],
+       for k in ("lexicon_rule", "tfidf_logreg", "distilbert_finetuned", "zero_shot_llm") if k in res],
       [1.75, 0.55, 0.6, 0.5],
       note="800 human-labelled sentences; food, service, price, ambience (SemEval has no cleanliness category). "
-           "No model saw SemEval training data.")
-para("Table IV and Fig. 4 compare the three aspect models on 800 human-labelled SemEval-2014 sentences that none of "
+           "No model was trained on SemEval; the LLM may have seen the public benchmark during pre-training. "
+           "ms/sent.: CPU for the first three models, one NVIDIA T4 GPU for the LLM.")
+para("Table IV and Fig. 4 compare the aspect models on 800 human-labelled SemEval-2014 sentences that none of "
      "them was trained on. Both learned models improve substantially on the lexicon rule that produced their training "
      "labels (macro-F1 0.737 and 0.727 versus 0.660), which confirms that weak supervision generalises beyond its own "
-     "heuristics. DistilBERT is the best model overall, and its advantage is concentrated where Radview needs it: "
+     "heuristics. DistilBERT is the best of the models that run on a CPU, and its advantage is concentrated where Radview needs it: "
      "complaint-F1 rises from 0.512 to 0.567 (+11% relative), with the largest gains on service (0.689 → 0.746) and "
      "ambience (0.227 → 0.348). TF-IDF remains slightly better on price (0.773 vs 0.748 macro-F1), where complaints use "
      "a small, distinctive vocabulary (*overpriced*, *expensive*). Ambience is hardest for every model: it is mentioned "
      "in only 28% of reviews and its complaints are lexically diverse. Fully supervised BERT models trained on "
      "SemEval's own training set report higher scores [12], [13]; ours is a transfer result from noisy Yelp labels, "
      "and DistilBERT costs about 6 ms per sentence on CPU against 0.06 ms for TF-IDF.")
+if zs:
+    db = res["distilbert_finetuned"]
+    para(f"The zero-shot LLM, given no training at all, is clearly more accurate: macro-F1 {f3(zs['macro_f1'])} and "
+         f"complaint-F1 {f3(zs['complaint_f1'])}, ahead of DistilBERT on every aspect and most of all at detecting "
+         f"complaints (food {f3(zs['complaint_f1_per_aspect']['food'])} vs "
+         f"{f3(db['complaint_f1_per_aspect']['food'])}, ambience {f3(zs['complaint_f1_per_aspect']['ambience'])} vs "
+         f"{f3(db['complaint_f1_per_aspect']['ambience'])}); all {zs['n_test']} replies were valid JSON. The price is "
+         f"speed and hardware: {zs['inference_ms_per_review']:.0f} ms per sentence on a T4 GPU against "
+         f"{db['inference_ms_per_review']:.1f} ms for DistilBERT on a CPU, so labelling all 152,649 reviews once would "
+         f"take well over a day of GPU time instead of under an hour on a laptop CPU (Sec. IV-H). The "
+         f"comparison may also flatter the LLM, since SemEval-2014 is public and could be in its pre-training data. "
+         f"We therefore keep DistilBERT for scoring and read the gap as a target: replacing the lexicon weak labels with "
+         f"LLM labels on a sample of Yelp reviews (distillation) is the most direct way to improve M2.")
 figure(FIGS / "fig3_m2.png",
-       "Per-aspect F1 on SemEval-2014 for the lexicon rule, TF-IDF and fine-tuned DistilBERT. Left: three-class "
-       "macro-F1. Right: F1 for detecting complaints (negative class).")
+       "Per-aspect F1 on SemEval-2014 for the lexicon rule, TF-IDF, fine-tuned DistilBERT and the zero-shot Qwen 2.5 7B "
+       "LLM. Left: three-class macro-F1. Right: F1 for detecting complaints (negative class).")
 
 h2("Emerging Complaint Detection (M3)")
 cs, ra = m3["complaint_spike"], m3["rating_alarm"]
@@ -755,7 +773,8 @@ h1("Conclusions")
 para("Radview is an end-to-end, containerised system that turns raw restaurant reviews into aspect-level complaint "
      "signals, a calibrated decline forecast with two independent explanations, and a ranked action plan in which "
      "every claim is mechanically verified. On real Yelp data its fine-tuned DistilBERT is the most accurate aspect "
-     "model on human-labelled SemEval sentences, especially for detecting complaints; its agent produced 53 fully "
+     "model that runs on a CPU, especially for detecting complaints, although a zero-shot open LLM is markedly more "
+     "accurate at about 127 times the cost per sentence; its agent produced 53 fully "
      "grounded plans while rejecting every fabricated claim, and kept a free open model's unsupported claims "
      "(31% of its drafts) away from owners; and its GRU is the best multi-signal forecaster. Our "
      "main contributions are the aspect-to-action pipeline evaluated on real data, the five-axis verifier with an "
@@ -766,7 +785,7 @@ para("The evaluation also contradicted two of our expectations, and we consider 
      "COVID-era test window; weak labels and an evaluation set without a cleanliness category; low review volumes that "
      "make individual rates noisy; attributions and star costs that are associational rather than causal; a verifier "
      "that checks traceability, not truth; and a small open LLM planner whose claims pass verification only "
-     "69% of the time. Future work: redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
+     "69% of the time. Future work: train DistilBERT on LLM labels instead of lexicon rules; redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
      "the exported 300-review Yelp sample; extend to several cities; compare a frontier LLM planner such as Claude with the open model, and collect owner "
      "usefulness ratings, which the dashboard already records.")
 

@@ -15,7 +15,7 @@ Benchmark **semeval2014** – 800 labelled texts, aspects: food, service, price,
 | lexicon_rule | 0.660 | 0.414 | 0.21 |
 | tfidf_logreg | 0.727 | 0.512 | 0.06 |
 | distilbert_finetuned | 0.737 | 0.567 | 6.49 |
-| zero_shot_llm | – | – | skipped: ANTHROPIC_API_KEY not set |
+| zero_shot_llm (qwen2.5:7b, T4 GPU) | 0.842 | 0.748 | 822.44 |
 
 Selected for production: **distilbert_finetuned** (on semeval2014).
 
