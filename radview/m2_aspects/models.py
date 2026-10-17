@@ -13,7 +13,8 @@ evaluation harness and the scoring job swap models freely.
                          fine-tuned on the weak labels (proposed model). Runs on
                          CPU with int8-quantised inference by default; with
                          RADVIEW_DEVICE=cuda it uses the GPU in bf16
-* ``ZeroShotLLMModel`` - zero-shot LLM prompt (baseline 3, needs an API key)
+* ``ZeroShotLLMModel`` - zero-shot LLM prompt (baseline 3): Claude with an API key, or the free
+                         open-weight model with RADVIEW_LLM_PROVIDER=open
 """
 from __future__ import annotations
 
@@ -26,7 +27,8 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-from radview.config import ASPECTS, DEVICE, LLM_MODEL, MAX_SEQ_LEN, MODELS_DIR, RANDOM_SEED, TRANSFORMER_BASE
+from radview.config import (ASPECTS, DEVICE, LLM_MODEL, LLM_PROVIDER, MAX_SEQ_LEN, MODELS_DIR, OPEN_LLM_MODEL,
+                            OPEN_LLM_URL, RANDOM_SEED, TRANSFORMER_BASE)
 from radview.m2_aspects.weak_labels import label_review
 
 N_CLS = 3
@@ -192,7 +194,12 @@ class TransformerModel:
 
 
 class ZeroShotLLMModel:
-    """Zero-shot baseline: ask an LLM to label each review (requires ANTHROPIC_API_KEY)."""
+    """Zero-shot baseline: ask an LLM to label each review, with no training.
+
+    ``provider`` "anthropic" uses Claude (needs ANTHROPIC_API_KEY); "open" uses the free open-weight model behind
+    an OpenAI-compatible endpoint (Ollama by default, see radview.m5_agent.open_llm). Replies that are not a JSON
+    object count as "none" for every aspect and are tallied in ``parse_failures``.
+    """
     name = "zero_shot_llm"
     PROMPT = (
         "Label the restaurant review below for each aspect: food, service, cleanliness, price, ambience. "
@@ -202,27 +209,44 @@ class ZeroShotLLMModel:
         "Review: {text}"
     )
 
-    def __init__(self, model: str = LLM_MODEL):
-        import anthropic
+    def __init__(self, provider: str = LLM_PROVIDER):
+        self.provider = provider
+        self.parse_failures = 0
+        if provider == "open":
+            self.model = OPEN_LLM_MODEL
+        else:
+            import anthropic
 
-        self.client = anthropic.Anthropic()
-        self.model = model
+            self.client = anthropic.Anthropic()
+            self.model = LLM_MODEL
 
     @staticmethod
     def available() -> bool:
-        return bool(os.getenv("ANTHROPIC_API_KEY"))
+        return LLM_PROVIDER == "open" or bool(os.getenv("ANTHROPIC_API_KEY"))
+
+    def _complete(self, prompt: str) -> str:
+        if self.provider == "open":
+            from radview.m5_agent import open_llm
+
+            resp, _ = open_llm.chat_with_retry(OPEN_LLM_URL, self.model, [{"role": "user", "content": prompt}])
+            return resp["choices"][0]["message"].get("content") or ""
+        msg = self.client.messages.create(model=self.model, max_tokens=2000,
+                                          messages=[{"role": "user", "content": prompt}])
+        return "" if msg.stop_reason == "refusal" else "".join(b.text for b in msg.content if b.type == "text")
 
     def predict_proba(self, texts, stars=None):
         mapping = {"none": 0, "positive": 1, "negative": 2}
         labs = []
+        self.parse_failures = 0
         for t in texts:
-            msg = self.client.messages.create(model=self.model, max_tokens=2000,
-                                              messages=[{"role": "user", "content": self.PROMPT.format(text=t)}])
-            raw = "" if msg.stop_reason == "refusal" else "".join(b.text for b in msg.content if b.type == "text")
+            raw = self._complete(self.PROMPT.format(text=t))
             try:
                 d = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
+                if not isinstance(d, dict):
+                    raise ValueError
             except ValueError:
                 d = {}
+                self.parse_failures += 1
             labs.append([mapping.get(str(d.get(a, "none")).lower(), 0) for a in ASPECTS])
         return _onehot(np.array(labs))
 

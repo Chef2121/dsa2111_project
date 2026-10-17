@@ -15,11 +15,14 @@ Steps
 5. Select the best model and score every review -> processed/review_aspects.parquet
 
 Usage:  python -m radview.m2_aspects.train [--no-transformer] [--train-size 8000]
+        RADVIEW_LLM_PROVIDER=open python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800
+                                       # add only the zero-shot LLM baseline to an existing evaluation
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import xml.etree.ElementTree as ET
 
@@ -35,6 +38,9 @@ from radview.m2_aspects.weak_labels import weak_label_frame
 
 HAND_LABELLED = LABELS_DIR / "hand_labelled.csv"
 TEST_SIZE = 1000
+# Sentences per benchmark for the zero-shot LLM: small by default to bound API cost; the free local model can
+# label a whole benchmark (--zero-shot-n 800), which makes it directly comparable with the other models.
+ZERO_SHOT_N = int(os.getenv("RADVIEW_ZEROSHOT_N", "150"))
 SEMEVAL_ASPECTS = ["food", "service", "price", "ambience"]  # SemEval-2014 has no cleanliness category
 # SemEval polarities -> our 3-class scheme. "conflict" contains a complaint, so it counts as negative;
 # "neutral" expresses no opinion, so it is treated as not-mentioned.
@@ -100,9 +106,8 @@ def evaluate(model, test: pd.DataFrame, aspects=ASPECTS) -> dict:
     }
 
 
-def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 40000, epochs: int = 2,
-        reuse_transformer: bool = False) -> dict:
-    reviews = pd.read_parquet(PROCESSED_DIR / "reviews.parquet")
+def load_benchmarks(reviews: pd.DataFrame) -> dict[str, tuple[pd.DataFrame, list[str]]]:
+    """Every labelled benchmark available: {name: (frame, aspects it covers)}."""
     benchmarks = {}
     in_domain = load_in_domain(reviews)
     if in_domain is not None:
@@ -112,6 +117,39 @@ def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 
         benchmarks["semeval2014"] = (semeval, SEMEVAL_ASPECTS)
     if not benchmarks:
         raise SystemExit("No labelled benchmark available (SemEval file missing and no hand labels).")
+    return benchmarks
+
+
+def evaluate_zero_shot(llm, df: pd.DataFrame, aspects: list[str], n: int = ZERO_SHOT_N) -> dict:
+    res = evaluate(llm, df.head(n), aspects)
+    res.update({"llm_provider": llm.provider, "llm_model": llm.model, "parse_failures": llm.parse_failures})
+    return res
+
+
+def run_zero_shot_only(n: int = ZERO_SHOT_N) -> dict:
+    """Evaluate only the zero-shot LLM baseline and merge it into outputs/m2_evaluation.json.
+
+    Every other result and the production model choice stay untouched, so this can run after a full M2 run -
+    e.g. on a GPU machine with the free open-weight model (RADVIEW_LLM_PROVIDER=open).
+    """
+    path = OUTPUTS_DIR / "m2_evaluation.json"
+    report = json.loads(path.read_text())
+    llm = ZeroShotLLMModel()
+    for name, (df, aspects) in load_benchmarks(pd.read_parquet(PROCESSED_DIR / "reviews.parquet")).items():
+        print(f"[M2] zero-shot {llm.provider}/{llm.model} on {min(n, len(df))} {name} texts ...")
+        res = evaluate_zero_shot(llm, df, aspects, n)
+        print(f"[M2] zero_shot_llm {name:12s} macro-F1={res['macro_f1']:.3f} complaint-F1={res['complaint_f1']:.3f} "
+              f"parse failures={res['parse_failures']}")
+        report["results"][name] = [r for r in report["results"].get(name, []) if r["model"] != llm.name] + [res]
+    path.write_text(json.dumps(report, indent=2))
+    return report
+
+
+def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 40000, epochs: int = 2,
+        reuse_transformer: bool = False) -> dict:
+    reviews = pd.read_parquet(PROCESSED_DIR / "reviews.parquet")
+    benchmarks = load_benchmarks(reviews)
+    in_domain = benchmarks.get("in_domain", (None,))[0]
     # Model selection uses the in-domain set when we have one, otherwise SemEval.
     select_on = "in_domain" if "in_domain" in benchmarks else "semeval2014"
 
@@ -151,12 +189,13 @@ def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 
         try:
             llm = ZeroShotLLMModel()
             for name, (df, aspects) in benchmarks.items():
-                results[name].append(evaluate(llm, df.head(150), aspects))
+                results[name].append(evaluate_zero_shot(llm, df, aspects))
         except Exception as exc:  # network / auth problems should not kill the pipeline
             print("[M2] zero-shot LLM skipped:", exc)
     else:
         for name in benchmarks:
-            results[name].append({"model": "zero_shot_llm", "skipped": "ANTHROPIC_API_KEY not set"})
+            results[name].append({"model": "zero_shot_llm",
+                                  "skipped": "ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open)"})
 
     candidates = [r for r in results[select_on] if r["model"] in {"tfidf_logreg", "distilbert_finetuned"}]
     best = max(candidates, key=lambda r: r["macro_f1"])["model"]
@@ -195,8 +234,13 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=2)
     ap.add_argument("--score-only", action="store_true")
     ap.add_argument("--reuse-transformer", action="store_true", help="evaluate the saved model instead of re-training")
+    ap.add_argument("--zero-shot-only", action="store_true",
+                    help="evaluate only the zero-shot LLM baseline and add it to outputs/m2_evaluation.json")
+    ap.add_argument("--zero-shot-n", type=int, default=ZERO_SHOT_N, help="texts per benchmark for the zero-shot LLM")
     args = ap.parse_args()
-    if args.score_only:
+    if args.zero_shot_only:
+        run_zero_shot_only(args.zero_shot_n)
+    elif args.score_only:
         score_all()
     else:
         run(use_transformer=not args.no_transformer, train_size=args.train_size, epochs=args.epochs,

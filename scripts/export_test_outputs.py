@@ -39,7 +39,13 @@ MODEL = {"majority": "Majority (base rate)", "current_negativity": "Current nega
          "sentiment_lgbm": "+ overall sentiment · LightGBM", "radview_lgbm": "All features · LightGBM",
          "radview_gru": "**All features · PyTorch GRU (Radview)**",
          "lexicon_rule": "Lexicon rule (weak labeller)", "tfidf_logreg": "TF-IDF + logistic regression",
-         "distilbert_finetuned": "**DistilBERT, fine-tuned (Radview)**", "zero_shot_llm": "Zero-shot LLM (Claude)"}
+         "distilbert_finetuned": "**DistilBERT, fine-tuned (Radview)**", "zero_shot_llm": "Zero-shot LLM"}
+
+
+def model_label(r: dict) -> str:
+    """Display name; the zero-shot LLM row names the model that actually ran."""
+    label = MODEL.get(r["model"], r["model"])
+    return f"{label} ({r['llm_model']})" if r.get("llm_model") else label
 
 
 def load(name: str):
@@ -124,15 +130,17 @@ def section_m2() -> list[str]:
         rows = []
         for r in res:
             if "skipped" in r:
-                rows.append([MODEL.get(r["model"], r["model"]), "–", "–", "–", f"skipped: {r['skipped']}"])
+                rows.append([model_label(r), "–", "–", "–", f"skipped: {r['skipped']}"])
             else:
                 extra = f"trained on {r['train_size']:,} reviews in {r['train_seconds']:,.0f} s" if r.get("train_seconds") else ""
-                rows.append([MODEL.get(r["model"], r["model"]), n(r["macro_f1"]), n(r["complaint_f1"]),
+                if r.get("llm_model"):
+                    extra = f"zero-shot on {r['n_test']} texts, {r.get('parse_failures', 0)} unparseable replies"
+                rows.append([model_label(r), n(r["macro_f1"]), n(r["complaint_f1"]),
                              n(r["inference_ms_per_review"], "{:.2f}"), extra])
         out += table(["Model", "Macro-F1", "Complaint-F1", "ms / text", "Note"], rows)
         for key, title in (("macro_f1_per_aspect", "Macro-F1 per aspect"), ("complaint_f1_per_aspect", "Complaint-F1 per aspect")):
             out += [f"*{title}:*", ""]
-            out += table(["Model"] + aspects, [[MODEL.get(r["model"], r["model"])] + [n(r[key][a]) for a in aspects]
+            out += table(["Model"] + aspects, [[model_label(r)] + [n(r[key][a]) for a in aspects]
                                                for r in res if key in r])
     wd = m2["weak_label_distribution"]
     out += ["### Weak-label distribution (training sample)", ""]

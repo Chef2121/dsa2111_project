@@ -10,7 +10,7 @@ This page is the interpretation for the report; RESULTS.md is regenerated automa
    DistilBERT reaches macro-F1 **0.737** vs 0.727 (TF-IDF) and 0.660 (the lexicon rule that produced its
    training labels) — it generalises beyond its own weak labels. The gain is largest exactly where Radview
    needs it: **complaint-F1 0.567 vs 0.512** (+11% relative). Per aspect it is strongest on service (0.86)
-   and weakest on ambience (0.64).
+   and weakest on ambience (0.64). **But a zero-shot LLM beats it** (next section).
 2. **The agent's plans are fully traceable.** 53 plans, **265/265** claims verified (100% groundedness);
    the adversarial planner's 160 fabricated claims were **all** rejected, every check axis firing. Note the
    rule-based planner is 100% by construction (it only states what the tools return); the meaningful
@@ -23,18 +23,26 @@ This page is the interpretation for the report; RESULTS.md is regenerated automa
 
 ## What did not work — report these honestly
 
-1. **The simplest baseline wins M4.** A logistic regression on rating-trend features alone (AUROC **0.738**,
+1. **A zero-shot LLM labels aspects better than our trained model.** The free Qwen 2.5 7B, prompted with no
+   training on one T4 GPU, reaches macro-F1 **0.842** and complaint-F1 **0.748** on the same 800 SemEval
+   sentences (DistilBERT 0.737 / 0.567), ahead on every aspect, with all replies valid JSON. It takes ~822 ms per
+   sentence on a GPU against ~6.5 ms for DistilBERT on a CPU (~127×), so DistilBERT stays the production scorer;
+   SemEval is public, so the LLM may have seen it in pre-training. Next step: train DistilBERT on LLM labels
+   instead of the lexicon rule (`python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800` with
+   `RADVIEW_LLM_PROVIDER=open` reproduces the number).
+
+2. **The simplest baseline wins M4.** A logistic regression on rating-trend features alone (AUROC **0.738**,
    PR-AUC **0.205**) beats the GRU and every model that adds aspect features. On this data, *what* people
    complain about does not improve the 3-month decline forecast beyond the rating trend itself.
-2. **Complaint spikes do not anticipate declines (M3 lift 0.63 < 1).** Months with a spike are followed by a
+3. **Complaint spikes do not anticipate declines (M3 lift 0.63 < 1).** Months with a spike are followed by a
    decline *less* often than average. The most likely reason is regression to the mean: a spike usually
    coincides with a rating that has already dropped, and the label compares the next 3 months with the past
    6 — so the following months tend to recover. The early-warning hypothesis is **not supported at monthly
    granularity** on Yelp; the rating-based alarm does even worse (lift 0.32).
-3. **Risk is low in absolute terms.** Declines are rare (~6% of restaurant-months) and calibrated risks top
+4. **Risk is low in absolute terms.** Declines are rare (~6% of restaurant-months) and calibrated risks top
    out around 13–16%, which is why risk tiers are defined as *lift* over the base rate (≥1.5× medium,
    ≥2× high) rather than fixed probabilities.
-4. **A small open LLM is not reliable on its own.** Running the agent with a free open-weight model (Qwen 2.5 7B
+5. **A small open LLM is not reliable on its own.** Running the agent with a free open-weight model (Qwen 2.5 7B
    via Ollama on one T4 GPU, `RADVIEW_LLM_PROVIDER=open`) on the 20 riskiest restaurants, only **33/48 claims
    (69%)** passed the verifier, against 100% for the rule-based planner. The model did act as an agent (4.4 tool
    calls of its own per plan, mostly fetching more evidence), but it paraphrased "quotes", wrote vague claims with

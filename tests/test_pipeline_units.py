@@ -252,3 +252,62 @@ def test_open_llm_helpers_repair_format_not_content():
     assert item["actions"] == ["Add a server on Fridays"]
     assert item["claims"][0] == {"type": "review", "text": "t", "review_ids": ["r1"], "quote": "q"}
     assert item["claims"][1] == {"type": "metric", "text": "23% of reviews", "review_ids": [], "quote": None}
+
+
+# ---------------------------------------------------------------- M2 zero-shot baseline with the open model
+class _ChatReply:
+    ok, status_code, text = True, 200, ""
+
+    def __init__(self, content):
+        self.content = content
+
+    def json(self):
+        return {"choices": [{"message": {"role": "assistant", "content": self.content}}]}
+
+
+def test_zero_shot_open_model_parses_labels_and_counts_failures(monkeypatch):
+    from radview.m2_aspects.models import ZeroShotLLMModel
+    from radview.m5_agent import open_llm
+
+    replies = iter(['Sure! {"food": "positive", "service": "Negative", "price": "none"}', "I cannot tell."])
+    sent = []
+
+    def fake_post(url, **kw):
+        sent.append(kw["json"])
+        return _ChatReply(next(replies))
+
+    monkeypatch.setattr(open_llm.requests, "post", fake_post)
+    llm = ZeroShotLLMModel(provider="open")
+    pred = llm.predict_proba(["Great food, rude waiter.", "Hmm."]).argmax(-1)
+    assert pred[0].tolist() == [LABEL_POS, LABEL_NEG, LABEL_NONE, LABEL_NONE, LABEL_NONE]  # missing aspects -> none
+    assert pred[1].tolist() == [LABEL_NONE] * len(ASPECTS)                                   # unparseable -> none
+    assert llm.parse_failures == 1
+    assert "tools" not in sent[0] and sent[0]["temperature"] == 0.0                         # plain chat, greedy
+
+
+def test_zero_shot_only_run_keeps_other_results(tmp_path, monkeypatch):
+    """--zero-shot-only replaces the zero-shot entry and leaves every other model and the model choice alone."""
+    from radview.m2_aspects import train
+
+    out = tmp_path / "m2_evaluation.json"
+    out.write_text(json.dumps({"selected_model": "distilbert_finetuned", "results": {"semeval2014": [
+        {"model": "tfidf_logreg", "macro_f1": 0.7}, {"model": "zero_shot_llm", "skipped": "no key"}]}}))
+
+    class FakeLLM:
+        name, provider, model, parse_failures = "zero_shot_llm", "open", "qwen2.5:7b", 0
+
+        def predict_proba(self, texts, stars=None):
+            return np.zeros((len(texts), len(ASPECTS), 3)) + np.array([1.0, 0, 0])
+
+    sem = pd.DataFrame({"review_id": ["a", "b"], "stars": np.nan, "text": ["x", "y"], **{a: [0, 0] for a in ASPECTS}})
+    monkeypatch.setattr(train, "OUTPUTS_DIR", tmp_path)
+    monkeypatch.setattr(train, "ZeroShotLLMModel", FakeLLM)
+    monkeypatch.setattr(train, "load_benchmarks", lambda reviews: {"semeval2014": (sem, train.SEMEVAL_ASPECTS)})
+    monkeypatch.setattr(train.pd, "read_parquet", lambda path: pd.DataFrame())
+    train.run_zero_shot_only(n=800)
+
+    rep = json.loads(out.read_text())
+    models = [r["model"] for r in rep["results"]["semeval2014"]]
+    assert models == ["tfidf_logreg", "zero_shot_llm"] and rep["selected_model"] == "distilbert_finetuned"
+    zs = rep["results"]["semeval2014"][1]
+    assert zs["llm_model"] == "qwen2.5:7b" and zs["n_test"] == 2 and "skipped" not in zs

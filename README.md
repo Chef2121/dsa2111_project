@@ -35,8 +35,9 @@ Results from the latest run are in **[docs/RESULTS.md](docs/RESULTS.md)** (regen
 **[docs/TEST_OUTPUTS.md](docs/TEST_OUTPUTS.md)** collects every test output in one file (all metrics, the pre-COVID
 check, training curves, planner comparison, every pytest result, raw JSON); **[docs/FINDINGS.md](docs/FINDINGS.md)** interprets them — including what did *not* work on real data.
 
-**Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best aspect model on human-labelled
-SemEval-2014 (macro-F1 0.737, complaint-F1 0.567); the agent's 53 plans are 100% verified while an adversarial planner is
+**Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best CPU aspect model on human-labelled
+SemEval-2014 (macro-F1 0.737, complaint-F1 0.567), though a zero-shot open LLM (Qwen 2.5 7B, GPU) reaches 0.842 / 0.748 at
+~127× the time per sentence; the agent's 53 plans are 100% verified while an adversarial planner is
 100% rejected; but a rating-trend logistic regression (AUROC 0.738) edges out the PyTorch GRU (0.727) at forecasting
 declines, and complaint spikes do not anticipate declines at monthly granularity — see FINDINGS for why.
 
@@ -137,7 +138,7 @@ and model wrote them. In Docker: `docker compose --profile llm up -d ollama`; in
 | `RADVIEW_CITY` / `RADVIEW_MAX_RESTAURANTS` | `Philadelphia` / `400` | Yelp slice: the N most-reviewed restaurants in a city |
 | `RADVIEW_START_DATE` | `2016-01-01` | ignore older reviews |
 | `RADVIEW_DEVICE` | `cpu` | `cuda` to train/score the PyTorch models on a GPU |
-| `ANTHROPIC_API_KEY`, `RADVIEW_LLM_MODEL` | – / `claude-opus-5-5` | enable the Claude planner (and the zero-shot M2 baseline) |
+| `ANTHROPIC_API_KEY`, `RADVIEW_LLM_MODEL` | – / `claude-opus-5-5` | enable the Claude planner and zero-shot M2 baseline (or use `RADVIEW_LLM_PROVIDER=open` for the free model) |
 | `RADVIEW_LLM_PROVIDER` | `anthropic` | `open` = M5 uses the free open-weight model instead of Claude |
 | `RADVIEW_OPEN_LLM_URL`, `RADVIEW_OPEN_LLM_MODEL` | `http://localhost:11434/v1` / `qwen2.5:7b` | OpenAI-compatible endpoint and model for `open` (Ollama by default) |
 | `RADVIEW_API_URL` | – | dashboard reads from this API instead of in-process |
@@ -224,7 +225,8 @@ Interactive docs at `/docs`.
 
 * **M2** — macro-F1 over {not mentioned, positive, negative} per aspect, plus complaint-F1, on SemEval-2014 Task 4
   restaurants (800 human-labelled sentences; food/service/price/ambience). Baselines: the lexicon rule, TF-IDF +
-  logistic regression, zero-shot Claude (with a key). `data/labels/yelp/to_label.csv` is exported for an in-domain
+  logistic regression, and a zero-shot LLM: Claude with a key, or the free Qwen 2.5 7B with `RADVIEW_LLM_PROVIDER=open`
+  (`python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800` adds it to an existing evaluation). `data/labels/yelp/to_label.csv` is exported for an in-domain
   hand-labelled set that also covers cleanliness.
 * **M3** — precision/lift of complaint spikes for a decline in the next 3 months, share of decline onsets preceded
   by a spike and the lead time, against an equivalent alarm on the star rating itself.

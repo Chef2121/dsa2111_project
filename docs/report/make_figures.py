@@ -87,18 +87,21 @@ fig.savefig(OUT / "fig2_agent.png"); plt.close(fig)
 
 # ---------------------------------------------------------------- Fig 3: M2 per-aspect F1
 m2 = json.loads((YELP / "m2_evaluation.json").read_text())["results"]["semeval2014"]
-names = {"lexicon_rule": "Lexicon rule", "tfidf_logreg": "TF-IDF + LR", "distilbert_finetuned": "DistilBERT (ours)"}
+names = {"lexicon_rule": "Lexicon rule", "tfidf_logreg": "TF-IDF + LR", "distilbert_finetuned": "DistilBERT (ours)",
+         "zero_shot_llm": "Zero-shot Qwen 2.5 7B"}
+rows = [r for r in m2 if r["model"] in names and "macro_f1" in r]   # skipped baselines have no scores
 aspects = ["food", "service", "price", "ambience"]
 fig, axes = plt.subplots(1, 2, figsize=(3.45, 1.75), sharey=True)
 for ax, key, title in zip(axes, ["macro_f1_per_aspect", "complaint_f1_per_aspect"], ["Macro-F1 (3 classes)", "Complaint F1"]):
-    w = 0.26
-    for i, r in enumerate([r for r in m2 if r["model"] in names]):
-        ax.bar([j + (i - 1) * w for j in range(4)], [r[key][a] for a in aspects], w, label=names[r["model"]],
+    w = 0.8 / len(rows)
+    for i, r in enumerate(rows):
+        ax.bar([j + (i - (len(rows) - 1) / 2) * w for j in range(4)], [r[key][a] for a in aspects], w, label=names[r["model"]],
                color=SER[i], edgecolor="white", lw=0.5)
     ax.set_xticks(range(4)); ax.set_xticklabels(["food", "service", "price", "amb."]); ax.set_title(title); ax.set_ylim(0, 1)
     ax.grid(axis="y", color="#e6e5e0", lw=0.5); ax.set_axisbelow(True)
 axes[0].set_ylabel("F1 on SemEval-2014")
-axes[0].legend(loc="upper center", bbox_to_anchor=(1.05, 1.42), ncol=3, frameon=False)
+axes[0].legend(loc="upper center", bbox_to_anchor=(1.05, 1.42 if len(rows) <= 3 else 1.6),
+               ncol=3 if len(rows) <= 3 else 2, frameon=False)
 fig.savefig(OUT / "fig3_m2.png"); plt.close(fig)
 
 # ---------------------------------------------------------------- Fig 4: M4 PR curves
