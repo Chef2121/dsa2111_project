@@ -22,7 +22,24 @@ from radview.lexicon import split_sentences
 
 
 class Store:
-    """Lazily loaded, process-wide cache of the pipeline outputs."""
+    """Lazily loaded, process-wide cache of the pipeline outputs.
+
+    ``refresh_if_changed`` drops the cache once a newer pipeline run has finished (outputs/pipeline_run.json is
+    written last), so a long-running API picks up the weekly rescore without a restart.
+    """
+
+    _stamp: float | None = None
+
+    def refresh_if_changed(self) -> bool:
+        marker = OUTPUTS_DIR / "pipeline_run.json"
+        stamp = marker.stat().st_mtime if marker.exists() else None
+        if stamp == self._stamp:
+            return False
+        for key in [k for k in vars(self) if not k.startswith("_")]:  # cached_property values
+            del self.__dict__[key]
+        aspect_model.cache_clear()
+        self._stamp = stamp
+        return True
 
     @cached_property
     def businesses(self) -> pd.DataFrame:
@@ -148,7 +165,7 @@ def get_evidence_reviews(business_id: str, aspect: str, k: int = EVIDENCE_PER_AS
     """Recent reviews whose *quoted sentence* is itself a complaint about ``aspect``.
 
     1. candidate reviews: M2 labels the review negative on the aspect, ranked by
-       confidence x recency (half-life ~4 months);
+       confidence x recency (weight exp(-days/120): halves every ~2.8 months);
     2. each candidate is split into sentences and M2 re-scores every sentence;
        the most negative sentence becomes the quote, and the review is kept only
        if that sentence alone is classified as a complaint about the aspect.

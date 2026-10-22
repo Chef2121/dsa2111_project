@@ -12,7 +12,10 @@ Steps
 3. Train TF-IDF+LR (baseline) and fine-tune DistilBERT in PyTorch (proposed).
 4. Evaluate every model (incl. the lexicon rule and, if an API key is set,
    a zero-shot LLM) with macro-F1 on each benchmark.
-5. Select the best model and score every review -> processed/review_aspects.parquet
+5. Select the best model on a *development* set - the in-domain labels, else 800
+   sentences of the SemEval-2014 training file - so the reported SemEval test
+   score is not also the score the model was chosen on - and score every review
+   -> processed/review_aspects.parquet
 
 Usage:  python -m radview.m2_aspects.train [--no-transformer] [--train-size 8000]
         RADVIEW_LLM_PROVIDER=open python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800
@@ -31,13 +34,15 @@ import pandas as pd
 from sklearn.metrics import f1_score
 
 from radview.config import (ASPECTS, LABEL_NEG, LABEL_NONE, LABEL_POS, LABELS_DIR, MODELS_DIR, OUTPUTS_DIR,
-                            PROCESSED_DIR, RANDOM_SEED, RAW_DIR, SEMEVAL_FILE)
+                            PROCESSED_DIR, RANDOM_SEED, RAW_DIR, SEMEVAL_FILE, SEMEVAL_TRAIN_FILE)
 from radview.m2_aspects.models import (LexiconModel, TfidfModel, TransformerModel, ZeroShotLLMModel,
                                        load_best_model)
 from radview.m2_aspects.weak_labels import weak_label_frame
 
 HAND_LABELLED = LABELS_DIR / "hand_labelled.csv"
 TEST_SIZE = 1000
+DEV_SIZE = 800  # SemEval training sentences used only to choose the production model
+DEV_BENCHMARK = "semeval2014_dev"
 # Sentences per benchmark for the zero-shot LLM: small by default to bound API cost; the free local model can
 # label a whole benchmark (--zero-shot-n 800), which makes it directly comparable with the other models.
 ZERO_SHOT_N = int(os.getenv("RADVIEW_ZEROSHOT_N", "150"))
@@ -47,12 +52,12 @@ SEMEVAL_ASPECTS = ["food", "service", "price", "ambience"]  # SemEval-2014 has n
 SEMEVAL_POLARITY = {"positive": LABEL_POS, "negative": LABEL_NEG, "conflict": LABEL_NEG, "neutral": LABEL_NONE}
 
 
-def load_semeval() -> pd.DataFrame | None:
-    """Parse the SemEval-2014 restaurant gold XML into one row per sentence."""
-    if not SEMEVAL_FILE.exists():
+def load_semeval(path=SEMEVAL_FILE) -> pd.DataFrame | None:
+    """Parse a SemEval-2014 restaurant XML file into one row per sentence."""
+    if not path.exists():
         return None
     rows = []
-    for sent in ET.parse(SEMEVAL_FILE).getroot().iter("sentence"):
+    for sent in ET.parse(path).getroot().iter("sentence"):
         row = {"review_id": sent.get("id"), "stars": np.nan, "text": sent.findtext("text"), **dict.fromkeys(ASPECTS, 0)}
         for cat in sent.iter("aspectCategory"):
             if cat.get("category") in SEMEVAL_ASPECTS:
@@ -115,13 +120,19 @@ def load_benchmarks(reviews: pd.DataFrame) -> dict[str, tuple[pd.DataFrame, list
     semeval = load_semeval()
     if semeval is not None:
         benchmarks["semeval2014"] = (semeval, SEMEVAL_ASPECTS)
+    dev = load_semeval(SEMEVAL_TRAIN_FILE)
+    if dev is not None:
+        dev = dev.sample(min(DEV_SIZE, len(dev)), random_state=RANDOM_SEED).reset_index(drop=True)
+        benchmarks[DEV_BENCHMARK] = (dev, SEMEVAL_ASPECTS)
     if not benchmarks:
         raise SystemExit("No labelled benchmark available (SemEval file missing and no hand labels).")
     return benchmarks
 
 
 def evaluate_zero_shot(llm, df: pd.DataFrame, aspects: list[str], n: int = ZERO_SHOT_N) -> dict:
-    res = evaluate(llm, df.head(n), aspects)
+    # a random (not first-n) sample, so a partial run is still a fair sample of the benchmark
+    sample = df if n >= len(df) else df.sample(n, random_state=RANDOM_SEED)
+    res = evaluate(llm, sample, aspects)
     res.update({"llm_provider": llm.provider, "llm_model": llm.model, "parse_failures": llm.parse_failures})
     return res
 
@@ -136,6 +147,8 @@ def run_zero_shot_only(n: int = ZERO_SHOT_N) -> dict:
     report = json.loads(path.read_text())
     llm = ZeroShotLLMModel()
     for name, (df, aspects) in load_benchmarks(pd.read_parquet(PROCESSED_DIR / "reviews.parquet")).items():
+        if name == DEV_BENCHMARK:  # the LLM is a baseline, never a selection candidate
+            continue
         print(f"[M2] zero-shot {llm.provider}/{llm.model} on {min(n, len(df))} {name} texts ...")
         res = evaluate_zero_shot(llm, df, aspects, n)
         print(f"[M2] zero_shot_llm {name:12s} macro-F1={res['macro_f1']:.3f} complaint-F1={res['complaint_f1']:.3f} "
@@ -145,13 +158,14 @@ def run_zero_shot_only(n: int = ZERO_SHOT_N) -> dict:
     return report
 
 
-def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 40000, epochs: int = 2,
+def run(use_transformer: bool = True, train_size: int = 6000, tfidf_size: int = 40000, epochs: int = 2,
         reuse_transformer: bool = False) -> dict:
     reviews = pd.read_parquet(PROCESSED_DIR / "reviews.parquet")
     benchmarks = load_benchmarks(reviews)
     in_domain = benchmarks.get("in_domain", (None,))[0]
-    # Model selection uses the in-domain set when we have one, otherwise SemEval.
-    select_on = "in_domain" if "in_domain" in benchmarks else "semeval2014"
+    # Model selection uses the in-domain set when we have one, otherwise the SemEval dev set. Only if neither
+    # exists does it fall back to the SemEval test set - and the report then says so (selected_on).
+    select_on = next(b for b in ("in_domain", DEV_BENCHMARK, "semeval2014") if b in benchmarks)
 
     held_out = set(in_domain["review_id"]) if in_domain is not None else set()
     pool = reviews[~reviews["review_id"].isin(held_out)]
@@ -189,13 +203,15 @@ def run(use_transformer: bool = True, train_size: int = 8000, tfidf_size: int = 
         try:
             llm = ZeroShotLLMModel()
             for name, (df, aspects) in benchmarks.items():
-                results[name].append(evaluate_zero_shot(llm, df, aspects))
+                if name != DEV_BENCHMARK:  # a baseline, never a selection candidate: no need to pay for dev
+                    results[name].append(evaluate_zero_shot(llm, df, aspects))
         except Exception as exc:  # network / auth problems should not kill the pipeline
             print("[M2] zero-shot LLM skipped:", exc)
     else:
         for name in benchmarks:
-            results[name].append({"model": "zero_shot_llm",
-                                  "skipped": "ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open)"})
+            if name != DEV_BENCHMARK:
+                results[name].append({"model": "zero_shot_llm",
+                                      "skipped": "ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open)"})
 
     candidates = [r for r in results[select_on] if r["model"] in {"tfidf_logreg", "distilbert_finetuned"}]
     best = max(candidates, key=lambda r: r["macro_f1"])["model"]
@@ -230,7 +246,7 @@ def score_all(reviews: pd.DataFrame | None = None) -> pd.DataFrame:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-transformer", action="store_true", help="skip DistilBERT fine-tuning (fast mode)")
-    ap.add_argument("--train-size", type=int, default=8000)
+    ap.add_argument("--train-size", type=int, default=6000, help="same default as the pipeline")
     ap.add_argument("--epochs", type=int, default=2)
     ap.add_argument("--score-only", action="store_true")
     ap.add_argument("--reuse-transformer", action="store_true", help="evaluate the saved model instead of re-training")

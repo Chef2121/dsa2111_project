@@ -1,7 +1,9 @@
 """M4 - train, compare and deploy the rating-decline forecasters.
 
 Models compared on an out-of-time test period (no temporal leakage: the
-split is by calendar month and every feature only uses past data):
+split is by calendar month, every feature only uses past data, and the last
+SPLIT_GAP_MONTHS labelled months before each boundary are dropped because their
+3-month label window reaches into the next period):
 
     majority            constant base rate                                   (floor)
     current_negativity  share of recent reviews with any complaint, no model (naive)
@@ -15,7 +17,8 @@ Every model is Platt-calibrated on the validation months so probabilities are
 comparable. Metrics: AUROC, PR-AUC (the honest metric for a rare outcome),
 Brier score (calibration), precision/recall in the top 10% riskiest
 business-months, early warning at a fixed 15% alert budget (share of decline
-onsets flagged up to 6 months ahead, lead time) and - on synthetic data, where
+onsets flagged up to 6 months ahead, lead time in calendar months, and the
+share random alerts with the same budget would flag) and - on synthetic data, where
 the injected deterioration episodes are known - how many episodes were caught
 *before* the drop became visible in the 3-month rating.
 
@@ -42,7 +45,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from radview.config import (ASPECTS, MODELS_DIR, OUTPUTS_DIR, PROCESSED_DIR, RANDOM_SEED, RAW_DIR, RISK_HIGH_LIFT,
-                            RISK_MEDIUM_LIFT, TEST_MONTHS, VALID_MONTHS)
+                            RISK_MEDIUM_LIFT, SPLIT_GAP_MONTHS, TEST_MONTHS, VALID_MONTHS)
 from radview.m4_forecast.attribution import (counterfactual_attribution, fit_star_impact, method_agreement,
                                              star_costs)
 from radview.m4_forecast.features import ALL_FEATURES, RATING_FEATURES, SENTIMENT_FEATURES
@@ -53,6 +56,7 @@ N_SEEDS = 3             # GRU ensemble size
 ALERT_BUDGET = 0.15     # share of business-months each model may flag in the early-warning tests
 LOOKBACK_ALERT = 6      # months before an onset in which an alert counts
 VISIBLE_DROP = 0.3      # stars: when an injected episode "becomes visible" in the 3-month rating
+CHANCE_REPS = 20        # random-alert replicates for the early-warning chance level
 
 FEATURE_GROUPS = {
     **{a: [f for f in ALL_FEATURES if f.startswith(a + "_")] for a in ASPECTS},
@@ -65,19 +69,27 @@ FEATURE_GROUPS = {
 # --------------------------------------------------------------------------
 # Split and baselines
 # --------------------------------------------------------------------------
-def time_split(feat: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, dict]:
+def time_split(feat: pd.DataFrame, gap: int = SPLIT_GAP_MONTHS) -> tuple[pd.Series, pd.Series, pd.Series, dict]:
+    """Train / validation / test by calendar month, with ``gap`` purged months before each boundary.
+
+    A label at month t uses the ratings of t+1..t+3, so without the gap the last training labels would be
+    computed from validation-period ratings (and the last validation labels from test-period ratings).
+    """
     months = sorted(feat.loc[feat["decline"].notna(), "month"].unique())
     test_start = months[-TEST_MONTHS]
     valid_start = months[-TEST_MONTHS - VALID_MONTHS]
+    train_end = months[months.index(valid_start) - gap]   # first month *not* in train
+    valid_end = months[months.index(test_start) - gap]    # first month *not* in validation
     labelled = feat["decline"].notna()
-    train = labelled & (feat["month"] < valid_start)
-    valid = labelled & (feat["month"] >= valid_start) & (feat["month"] < test_start)
+    train = labelled & (feat["month"] < train_end)
+    valid = labelled & (feat["month"] >= valid_start) & (feat["month"] < valid_end)
     test = labelled & (feat["month"] >= test_start)
-    info = {"train": f"{months[0]}..{months[months.index(valid_start) - 1]}",
-            "valid": f"{valid_start}..{months[months.index(test_start) - 1]}",
-            "test": f"{test_start}..{months[-1]}", "test_start": test_start,
+    info = {"train": f"{months[0]}..{months[months.index(train_end) - 1]}",
+            "valid": f"{valid_start}..{months[months.index(valid_end) - 1]}",
+            "test": f"{test_start}..{months[-1]}", "test_start": test_start, "gap_months": gap,
             "n_train": int(train.sum()), "n_valid": int(valid.sum()), "n_test": int(test.sum()),
             "pos_rate_train": round(float(feat.loc[train, "decline"].mean()), 4),
+            "pos_rate_valid": round(float(feat.loc[valid, "decline"].mean()), 4),
             "pos_rate_test": round(float(feat.loc[test, "decline"].mean()), 4)}
     return train, valid, test, info
 
@@ -95,23 +107,37 @@ def _lgbm(X_tr, y_tr, X_va, y_va):
 # --------------------------------------------------------------------------
 # Metrics
 # --------------------------------------------------------------------------
-def early_warning(frame: pd.DataFrame, prob: np.ndarray, threshold: float) -> dict:
-    """Share of decline onsets with an alert in the preceding LOOKBACK_ALERT months, and the lead time."""
-    df = frame[["business_id", "month", "decline"]].copy()
-    df["alert"] = prob >= threshold
-    df = df.sort_values(["business_id", "month"])
+def _onset_leads(month_no: np.ndarray, decline: np.ndarray, alert: np.ndarray, biz: np.ndarray) -> np.ndarray:
+    """For each decline onset (labelled 0 in the calendar month before, 1 now), the months from the first alert
+    in the LOOKBACK_ALERT months up to it to the start of its decline window; NaN if none fired.
+    Rows sorted by business and month; months without a label are simply absent."""
     leads = []
-    for _, g in df.groupby("business_id", sort=False):
-        d = g["decline"].to_numpy()
-        a = g["alert"].to_numpy()
-        for i in range(1, len(g)):
-            if d[i] == 1 and d[i - 1] == 0:  # onset: the decline window starts after month i
-                lo = max(0, i - LOOKBACK_ALERT + 1)
-                hits = np.flatnonzero(a[lo:i + 1])
-                leads.append((i + 1) - (lo + hits[0]) if len(hits) else np.nan)
-    leads = np.array(leads, dtype=float)
+    starts = np.flatnonzero(np.r_[True, biz[1:] != biz[:-1]])
+    for s, e in zip(starts, np.r_[starts[1:], len(biz)]):
+        m, d, a = month_no[s:e], decline[s:e], alert[s:e]
+        for i in range(1, len(m)):
+            if d[i] == 1 and d[i - 1] == 0 and m[i - 1] == m[i] - 1:
+                window = (m >= m[i] - LOOKBACK_ALERT + 1) & (m <= m[i]) & a
+                hits = np.flatnonzero(window)
+                leads.append(m[i] + 1 - m[hits[0]] if len(hits) else np.nan)
+    return np.array(leads, dtype=float)
+
+
+def early_warning(frame: pd.DataFrame, prob: np.ndarray, threshold: float) -> dict:
+    """Share of decline onsets with an alert in the preceding LOOKBACK_ALERT months, the lead time, and the share
+    that the same number of alerts at random business-months would catch (the chance level)."""
+    order = np.lexsort((frame["month"].to_numpy(), frame["business_id"].to_numpy()))
+    biz = frame["business_id"].to_numpy()[order]
+    month_no = pd.PeriodIndex(frame["month"].to_numpy()[order], freq="M").asi8
+    decline = frame["decline"].to_numpy()[order]
+    alert = (prob >= threshold)[order]
+    leads = _onset_leads(month_no, decline, alert, biz)
     det = ~np.isnan(leads)
+    rng = np.random.default_rng(RANDOM_SEED)
+    chance = [np.mean(~np.isnan(_onset_leads(month_no, decline, rng.permutation(alert), biz)))
+              for _ in range(CHANCE_REPS)] if len(leads) else []
     return {"onsets": int(len(leads)), "detected_pct": round(100 * float(det.mean()), 1) if len(leads) else None,
+            "chance_detected_pct": round(100 * float(np.mean(chance)), 1) if chance else None,
             "median_lead_months": float(np.median(leads[det])) if det.any() else None,
             "mean_lead_months": round(float(np.mean(leads[det])), 2) if det.any() else None}
 
@@ -250,9 +276,8 @@ def run(epochs: int = 30, test_end: str | None = None) -> dict:
     lgbm_importance = pd.Series(np.abs(sv).mean(0), index=ALL_FEATURES).sort_values(ascending=False)
 
     # ---------------- persist --------------------------------------------------
-    base_rate = float(y[rows_tr].mean())
     torch.save({"state_dict": gru.state_dict(), "n_seeds": N_SEEDS, "calibration": calibs["radview_gru"],
-                "base_rate": base_rate,
+                "train_base_rate": float(y[rows_tr].mean()),
                 "features": ALL_FEATURES, "mean": mean.to_dict(), "std": std.to_dict()}, MODELS_DIR / "m4_gru.pt")
     lgbm_models["radview_lgbm"].booster_.save_model(str(MODELS_DIR / "m4_lgbm.txt"))
     tp = test_frame[["business_id", "month", "decline"]].copy()
@@ -265,7 +290,7 @@ def run(epochs: int = 30, test_end: str | None = None) -> dict:
     report = {"split": split, "results": results, "injected_episodes": episodes, "gru_training": train_info,
               "calibration": calibs["radview_gru"], "primary_model": "radview_gru",
               "lgbm_top_features_shap": lgbm_importance.head(15).round(4).to_dict()}
-    agreement = score(feat, gru, data, rows_tr, calibs["radview_gru"], base_rate)
+    agreement = score(feat, gru, data, rows_tr, calibs["radview_gru"])
     report["attribution_agreement"] = agreement
     (OUTPUTS_DIR / "m4_evaluation.json").write_text(json.dumps(report, indent=2))
     return report
@@ -275,9 +300,13 @@ def run(epochs: int = 30, test_end: str | None = None) -> dict:
 # Scoring and explanation
 # --------------------------------------------------------------------------
 def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarray,
-          calib: tuple[float, float], base_rate: float) -> dict:
+          calib: tuple[float, float]) -> dict:
     """Risk for every business-month; for each restaurant's latest month also SHAP, counterfactual
-    attribution and star cost per aspect. Returns SHAP-vs-counterfactual agreement statistics."""
+    attribution and star cost per aspect. Returns SHAP-vs-counterfactual agreement statistics.
+
+    Risk tiers are lift over the *typical* restaurant: the mean predicted risk of the restaurants active in
+    the latest month (see config). Months before the test period in risk_history are in-sample.
+    """
     all_rows = np.arange(len(feat))
     hist = feat[["business_id", "month", "decline", "rating_3m", "n_reviews_3m"]].copy()
     hist["risk"] = apply_platt(predict(gru, data, all_rows), calib)
@@ -290,6 +319,8 @@ def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarr
     cols += [f"{a}_{s}" for a in ASPECTS for s in ("neg_rate_3m", "market_rate")]
     latest = feat.loc[latest_rows, cols].reset_index(drop=True)
     latest["risk"] = hist["risk"].to_numpy()[latest_rows]
+    active = latest["n_reviews_3m"] > 0
+    base_rate = float(latest.loc[active, "risk"].mean() if active.any() else latest["risk"].mean())
     latest["base_rate"] = base_rate
     latest["risk_lift"] = latest["risk"] / base_rate
     latest["risk_level"] = np.select([latest["risk_lift"] >= RISK_HIGH_LIFT, latest["risk_lift"] >= RISK_MEDIUM_LIFT],
@@ -322,7 +353,7 @@ def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarr
     at_risk = (latest["risk_level"] != "low").to_numpy()
     agreement = {"at_risk": method_agreement(shap_aspects, cf, at_risk),
                  "all": method_agreement(shap_aspects, cf, np.ones(len(latest), bool)),
-                 "star_impact_coefficients": coefs}
+                 "star_impact_coefficients": coefs, "typical_risk": round(base_rate, 4)}
     print(f"[M4] latest month {last_month}: {int((latest['risk_level'] == 'high').sum())} high-risk restaurants; "
           f"SHAP/counterfactual top-aspect agreement {agreement['all'].get('top_aspect_agreement')}")
     return agreement
@@ -336,10 +367,9 @@ def score_saved() -> dict:
     gru = GRUEnsemble([DeclineGRU(data.n_inputs) for _ in range(ckpt["n_seeds"])])
     gru.load_state_dict(ckpt["state_dict"])
     gru.to(DEVICE).eval()
-    rng = np.random.default_rng(RANDOM_SEED)
-    base_rate = ckpt.get("base_rate", float(feat["decline"].mean()))
-    return score(feat, gru, data, rng.choice(len(feat), min(5000, len(feat)), replace=False),
-                 tuple(ckpt["calibration"]), base_rate)
+    # SHAP background = training months, as in a full run, so explanations are comparable between the two
+    background = np.flatnonzero(time_split(feat)[0].to_numpy())
+    return score(feat, gru, data, background, tuple(ckpt["calibration"]))
 
 
 if __name__ == "__main__":

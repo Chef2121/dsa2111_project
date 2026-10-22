@@ -25,7 +25,7 @@ before the owner sees it.
 | Module | Implementation | Key file |
 |---|---|---|
 | **M1** Ingestion | Streams the Yelp JSON-lines files line by line, keeps one city's restaurants, cleans text, removes duplicates and the partial last month, writes parquet. A preflight CLI suggests the city slice. | [`radview/m1_ingest/`](radview/m1_ingest/) |
-| **M2** Aspect sentiment | Seed-lexicon + star-rating **weak supervision** → TF-IDF/LogReg baseline and a **fine-tuned DistilBERT** (PyTorch, one 3-way head per aspect, int8-quantised CPU inference). Aspect polarity comes **from the text**, not from the star rating. Evaluated on the human-labelled **SemEval-2014** restaurant set. | [`radview/m2_aspects/`](radview/m2_aspects/) |
+| **M2** Aspect sentiment | Seed-lexicon + star-rating **weak supervision** → TF-IDF/LogReg baseline and a **fine-tuned DistilBERT** (PyTorch, one 3-way head per aspect, int8-quantised CPU inference). The model reads the text, but about 4 in 10 of its weak training labels still take their polarity from the star rating (when a sentence names an aspect without a sentiment word), so its aspect polarity is *mostly*, not purely, text-based. Chosen on a SemEval-2014 dev set, evaluated on the human-labelled **SemEval-2014** test set. | [`radview/m2_aspects/`](radview/m2_aspects/) |
 | **M3** Complaint trends | Monthly complaint rate per aspect, EWMA-smoothed, robust (median/MAD) z-score against the restaurant's *own* trailing 12 months, with a minimum-mention guard. | [`radview/m3_trends/detector.py`](radview/m3_trends/detector.py) |
 | **M4** Decline forecast | Target: next-3-month rating falls ≥ 0.3★ below the trailing 6 months **and** the drop is statistically significant. **PyTorch GRU ensemble** over 12-month sequences incl. **market-relative** features (vs. the city median that month), Platt-calibrated. Explained two ways — **SHAP** (GradientExplainer) and a **counterfactual** ("risk if this aspect were at the market norm") — plus a ridge **star-cost** estimate. | [`radview/m4_forecast/`](radview/m4_forecast/) |
 | **M5** Agent | **LangGraph** workflow. **Claude runs its own tool-calling loop** (`query_metrics`, `run_forecast`, `get_evidence_reviews`, `compare_peers`) and submits a structured plan; a **rule-based planner** is the offline fallback *and* the baseline. A mechanical **verifier** checks every claim on five axes (citation, quotation, relevance, statistic, substance); an **adversarial planner** proves it rejects fabrications. Priority = impact (SHAP + counterfactual) and urgency, divided by the effort of the fix. | [`radview/m5_agent/`](radview/m5_agent/) |
@@ -72,7 +72,7 @@ python -c "from radview.config import SOURCE; from radview import service; print
 |---|---|---|
 | Dashboard | `python -m streamlit run dashboard/app.py` | http://localhost:8501 |
 | REST API + docs | `python -m uvicorn radview.api.main:app --port 8000` | http://localhost:8000/docs |
-| Tests (23) | `python -m pytest -q` | — |
+| Tests (43) | `python -m pytest -q` | — |
 | An action plan in the terminal | `python -m radview.m5_agent.cli` | — |
 
 **Test the models yourself:** dashboard → **Try a review** (paste any review, see the aspect labels and the
@@ -104,6 +104,10 @@ streamlit run dashboard/app.py        # http://localhost:8501
 # … and/or the REST API
 uvicorn radview.api.main:app --port 8000   # http://localhost:8000/docs
 ```
+
+**Only the trained-models bundle, not the raw Yelp files?** `python -m radview.pipeline --from-processed` skips M1
+and retrains/re-evaluates everything from the bundle's `processed/` tables (see
+[docs/GPU_RERUN.md](docs/GPU_RERUN.md) for running it on a GPU machine).
 
 **No Yelp download?** `RADVIEW_SOURCE=synthetic python -m radview.pipeline --fast` generates a Yelp-format
 synthetic dataset (220 restaurants with injected deterioration episodes and known ground truth) and runs the whole
@@ -142,6 +146,9 @@ and model wrote them. In Docker: `docker compose --profile llm up -d ollama`; in
 | `RADVIEW_LLM_PROVIDER` | `anthropic` | `open` = M5 uses the free open-weight model instead of Claude |
 | `RADVIEW_OPEN_LLM_URL`, `RADVIEW_OPEN_LLM_MODEL` | `http://localhost:11434/v1` / `qwen2.5:7b` | OpenAI-compatible endpoint and model for `open` (Ollama by default) |
 | `RADVIEW_API_URL` | – | dashboard reads from this API instead of in-process |
+| `RADVIEW_SELECT_BY` | `lifetime` | which N restaurants: `lifetime` Yelp review count (uses future information, favours survivors) or `early` = most reviews in the first 12 months after the start date |
+| `RADVIEW_MAX_SEQ_LEN` | `256` | DistilBERT input length in tokens (128 cut off ~40% of Yelp reviews) |
+| `RADVIEW_ALLOW_LLM_REFRESH` | `0` | `1` lets plan refreshes requested through the API / dashboard use the LLM planner (they cost money); otherwise they run rule-based |
 
 Model and threshold settings (decline threshold, horizon, spike z, time split…) are documented in
 [`radview/config.py`](radview/config.py).
@@ -249,7 +256,7 @@ and star cost, market-relative features, Brier/baselines/lead-time evaluation, o
 | | ReviewRadar | Radview |
 |---|---|---|
 | Evaluation data | simulator only | **real Yelp** (400 Philadelphia restaurants) + simulator for injected-episode checks |
-| Aspect polarity | star rating (`stars ≤ 2` → complaint) | **from the text** — fine-tuned DistilBERT |
+| Aspect polarity | star rating (`stars ≤ 2` → complaint) | **read from the text** by a fine-tuned DistilBERT (trained on weak labels, ~4 in 10 of which borrow the star rating) |
 | Aspect model evaluation | weak labels | human-labelled **SemEval-2014** |
 | Forecaster | gradient boosting | **GRU sequence model** (PyTorch) + 5 baselines, calibrated |
 | Explanation | counterfactual | counterfactual **and SHAP**, with their agreement reported |
@@ -289,16 +296,25 @@ docs/RESULTS.md        latest evaluation tables
 
 ## Known limitations
 
-1. **Weak labels are noisy.** M2 is trained on lexicon + star labels; SemEval measures it on human labels but has no
-   cleanliness category — hand-label `to_label.csv` for a full in-domain figure.
+1. **Weak labels are noisy and partly star-based.** M2 is trained on lexicon + star labels (about 4 in 10 labels take
+   their polarity from the star rating); SemEval measures it on human labels but has no cleanliness category —
+   hand-label `to_label.csv` for a full in-domain figure. M2 is also trained on reviews from every year, including
+   M4's test period.
 2. **Attribution is associational.** The counterfactual intervenes on the model, not the restaurant; the star cost is
-   a market-wide regression. Neither proves that fixing an aspect raises the rating.
+   a market-wide regression (constrained so complaints can only cost stars). Neither proves that fixing an aspect
+   raises the rating.
 3. **The verifier checks traceability, not truth.** A plan built on a wrong forecast still passes if it cites correctly.
+   Its relevance check uses the same M2 model that picked the evidence, and figures written as words ("one in four")
+   are not recognised. The rule-based planner scores 100% by construction (it writes exactly the figures and quotes
+   the verifier checks); LLM planners and the adversarial planner are the real tests.
 4. **The Claude planner needs credentials** to be evaluated; without them the comparison reports rule-based and
    adversarial only, and says so.
-5. **Yelp is self-selected and ends in Jan 2022** (the test period overlaps COVID-19), so absolute lead times will
-   differ from a live review feed.
-6. **CPU budget:** the Yelp slice (one city, top 400 restaurants, 2016+) keeps DistilBERT scoring to ~1 hour on CPU.
+5. **Yelp is self-selected and ends in Jan 2022** (the test period overlaps COVID-19, and the validation months used
+   for calibration and early stopping run into its start), so absolute lead times will differ from a live review feed.
+6. **Restaurant selection.** The default slice takes the 400 restaurants with the highest *final* review count, which
+   favours survivors; `RADVIEW_SELECT_BY=early` selects on the first year only (needs the raw Yelp files).
+7. **CPU budget:** the Yelp slice (one city, top 400 restaurants, 2016+) keeps DistilBERT scoring to ~1–2 hours on
+   CPU at 256 tokens; a GPU makes it minutes.
 
 ## Data & licences
 

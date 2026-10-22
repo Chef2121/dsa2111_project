@@ -5,7 +5,7 @@ recommendations stay practical for a small restaurant.
 """
 from __future__ import annotations
 
-from radview.lexicon import SUB_THEMES, tokenize
+from radview.lexicon import SUB_THEMES, aspect_tokens
 
 PLAYBOOK: dict[str, dict[str, list[str]]] = {
     "food": {
@@ -59,7 +59,7 @@ def detect_sub_themes(aspect: str, texts: list[str]) -> list[str]:
     """Sub-themes (e.g. 'wait times') mentioned in the evidence, most frequent first."""
     counts: dict[str, int] = {}
     for t in texts:
-        toks = set(tokenize(t))
+        toks = set(aspect_tokens(t))  # "can't wait to come back" is not a wait-time complaint
         for theme, words in SUB_THEMES.get(aspect, {}).items():
             if toks & words:
                 counts[theme] = counts.get(theme, 0) + 1

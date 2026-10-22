@@ -19,6 +19,7 @@ Run:  streamlit run dashboard/app.py
 """
 from __future__ import annotations
 
+import html
 import sys
 from pathlib import Path
 
@@ -118,7 +119,9 @@ def page_portfolio():
     k[0].metric("Restaurants monitored", len(view))
     k[1].metric("🔴 High risk", int((view["risk_level"] == "high").sum()))
     k[2].metric("🟠 Medium risk", int((view["risk_level"] == "medium").sum()))
-    k[3].metric("With complaint spikes", int(view["spiking_aspects"].map(len).gt(0).sum()))
+    k[3].metric("Spiked in last 3 months", int(view["spiking_aspects"].map(len).gt(0).sum()),
+                help="restaurants with an M3 complaint spike this month or in the two before "
+                     "(the Alerts page lists only this month's spikes)")
     k[4].metric("Avg rating (3 mo)", f"{view['rating_3m'].mean():.2f} ★" if len(view) else "–")
 
     left, right = st.columns([3, 2])
@@ -173,7 +176,8 @@ def _verdict(info, m, fc, plan: dict | None = None) -> str:
     if plan and plan.get("items"):
         top = plan["items"][0]["aspect"]
     else:
-        top = max(ASPECTS, key=lambda a: fc.get("counterfactual_risk_drop", {}).get(a, 0) + fc["attributions"].get(a, 0))
+        # counterfactual risk drop only: adding SHAP (logit units) to it would mix units
+        top = max(ASPECTS, key=lambda a: fc.get("counterfactual_risk_drop", {}).get(a, 0))
     am = m["aspects"][top]
     market = (f", against a market median of {pct(am['market_median_rate'])}"
               if am.get("market_median_rate") is not None else "")
@@ -195,7 +199,8 @@ def _plan_section(bid: str):
     head[0].markdown(f"### 🧭 What to do first &nbsp; <span style='font-size:0.75rem;border:1px solid {MUTED};"
                      f"border-radius:8px;padding:1px 8px'>{PLANNER_BADGE.get(planner, 'RULE-BASED')}</span>",
                      unsafe_allow_html=True)
-    if head[1].button("↻ Re-run", help="Re-run the agent (uses the LLM planner if one is configured)"):
+    if head[1].button("↻ Re-run", help="Re-run the agent (rule-based unless the server sets "
+                                       "RADVIEW_ALLOW_LLM_REFRESH=1, because LLM runs cost money)"):
         load.clear()
         client().plan(bid, refresh=True)
         st.rerun()
@@ -216,8 +221,8 @@ def _plan_section(bid: str):
             badge_html = " ".join(f"<span style='font-size:0.75rem;background:{SOFT};border-radius:8px;padding:2px 8px;"
                                   f"margin-left:4px'>{b}</span>" for b in badges if b)
             st.markdown(f"<span style='display:inline-block;width:10px;height:10px;border-radius:50%;background:{color};"
-                        f"margin-right:6px'></span>**{it['rank']} · {it['aspect'].capitalize()}** — {it['headline']} "
-                        f"{badge_html}", unsafe_allow_html=True)
+                        f"margin-right:6px'></span>**{it['rank']} · {it['aspect'].capitalize()}** — "
+                        f"{html.escape(it['headline'])} {badge_html}", unsafe_allow_html=True)  # headline may be LLM text
             if it["actions"]:
                 st.markdown(f"**Do this:** {it['actions'][0]}")
             ev, act = st.columns([3, 2])
@@ -238,7 +243,8 @@ def _plan_section(bid: str):
         if rejected:
             st.dataframe(pd.DataFrame(rejected), hide_index=True, use_container_width=True)
         else:
-            st.write("Every drafted claim passed citation, quotation, relevance and statistic checks.")
+            st.write("Every drafted claim passed the citation, quotation, relevance and statistic checks. "
+                     "They check that each claim is traceable to a review or a returned figure, not that it is true.")
     with st.expander("Rate this action plan (helps us measure usefulness)"):
         with st.form(f"fb-{bid}", clear_on_submit=True):
             score = st.slider("How useful is this plan?", 1, 5, 4)
@@ -265,21 +271,22 @@ def page_restaurant():
 
     # --- Am I in trouble? -------------------------------------------------------
     with st.container(border=True):
+        place = html.escape(f"{info['cuisine']} · {info['address']}, {info['city']} · analysis for {m['month']}")
         st.markdown(f"{status_badge(fc['risk_level'])} &nbsp; <span style='color:{MUTED};font-size:0.85rem'>"
-                    f"{info['cuisine']} · {info['address']}, {info['city']} · analysis for {m['month']}</span>",
-                    unsafe_allow_html=True)
+                    f"{place}</span>", unsafe_allow_html=True)
         with st.spinner("Running the agent…"):
             plan = load("plan", bid)
         st.markdown(_verdict(info, m, fc, plan))
     spikes = [a for a, v in m["aspects"].items() if v["spike"]]
     k = st.columns(4)
     k[0].metric("Chance rating falls", pct(fc["risk"]), delta=f"{fc.get('risk_lift', 1):.1f}× typical", delta_color="off",
-                help="next 3 months, ≥0.3★, calibrated probability; typical restaurant = training base rate")
+                help="next 3 months, ≥0.3★, calibrated probability; typical restaurant = mean predicted risk of "
+                     "the restaurants active this month")
     delta = None if m["rating_3m"] is None or m["rating_6m"] is None else round(m["rating_3m"] - m["rating_6m"], 2)
     k[1].metric("Average rating (3 mo)", f"{m['rating_3m']:.2f} ★" if m["rating_3m"] else "–",
                 delta=f"{delta:+.2f} vs 6 mo" if delta is not None else None)
     k[2].metric("Reviews (3 mo)", m["reviews_3m"])
-    k[3].metric("Live alerts", len(spikes), help=", ".join(spikes) if spikes else "nothing spiking right now")
+    k[3].metric("Spikes (last 3 mo)", len(spikes), help=", ".join(spikes) if spikes else "nothing spiked recently")
 
     # --- Is my rating moving? / What are people complaining about? -------------
     left, right = st.columns(2)
@@ -318,12 +325,12 @@ def page_restaurant():
 
     # --- Is it getting worse? ---------------------------------------------------------
     issue = st.session_state["issue"]
-    st.markdown(f"**{issue.capitalize()} complaints over time** — monthly share (EWMA) vs. the market median; "
-                f"red dots are M3 complaint spikes")
+    st.markdown(f"**{issue.capitalize()} complaints over time** — share of the last 3 months' reviews, yours vs. the "
+                f"market median (same window for both); red dots are M3 complaint spikes")
     sub = tl.tail(36)
-    series = ["monthly (EWMA)", "market median (3 mo)"]
+    series = ["this restaurant (3 mo)", "market median (3 mo)"]
     long = pd.concat([
-        pd.DataFrame({"date": sub["date"], "month": sub["month"], "series": series[0], "value": sub[f"{issue}_rate"]}),
+        pd.DataFrame({"date": sub["date"], "month": sub["month"], "series": series[0], "value": sub[f"{issue}_neg_rate_3m"]}),
         pd.DataFrame({"date": sub["date"], "month": sub["month"], "series": series[1], "value": sub[f"{issue}_market_rate"]}),
     ])
     lines = alt.Chart(long).mark_line(strokeWidth=2).encode(
@@ -334,7 +341,7 @@ def page_restaurant():
         tooltip=["month:N", "series:N", alt.Tooltip("value:Q", format=".1%")])
     dots = alt.Chart(sub[sub[f"{issue}_spike"] == 1]).mark_point(
         filled=True, size=90, color="#d03b3b", stroke="white", strokeWidth=2).encode(
-        x="date:T", y=f"{issue}_rate:Q",
+        x="date:T", y=f"{issue}_neg_rate_3m:Q",
         tooltip=[alt.Tooltip("month:N", title="Spike"), alt.Tooltip(f"{issue}_z:Q", title="Robust z", format=".1f")])
     chart_or_table(alt.layer(lines, dots).properties(height=220),
                    sub[["month", f"{issue}_rate", f"{issue}_neg_rate_3m", f"{issue}_market_rate", f"{issue}_z",
@@ -371,6 +378,12 @@ def page_restaurant():
         with c2:
             chart_or_table(cf_chart, cf, "cf")
     with tab_risk:
+        split = ((load("evaluation").get("m4") or {}).get("split") or {})
+        test_start = (split.get("test") or "").split("..")[0]
+        marks = []
+        if test_start:  # before the test period the model has seen the outcomes: those points are in-sample
+            marks.append(alt.Chart(pd.DataFrame({"date": [pd.to_datetime(test_start)]})).mark_rule(
+                color=INK, strokeDash=[2, 2]).encode(x="date:T"))
         risk = alt.layer(
             alt.Chart(tl).mark_area(color="#d03b3b", opacity=0.12).encode(
                 x=alt.X("date:T", title=None), y=alt.Y("risk:Q", title="Risk", axis=alt.Axis(format="%"))),
@@ -378,9 +391,12 @@ def page_restaurant():
                 x="date:T", y="risk:Q", tooltip=["month:N", alt.Tooltip("risk:Q", format=".0%")]),
             alt.Chart(pd.DataFrame({"y": [1.5 * fc["base_rate"], 2.0 * fc["base_rate"]]})).mark_rule(
                 strokeDash=[4, 4], color=MUTED).encode(y="y:Q"),
+            *marks,
         ).properties(height=220)
         st.caption("Predicted decline risk each month; dashed lines mark the medium (1.5×) / high (2×) "
-                   "thresholds relative to the typical restaurant.")
+                   "thresholds relative to the typical restaurant."
+                   + (f" Months before {test_start} (dotted line) were used to train or calibrate the model, so "
+                      "the risk there is in-sample and looks more accurate than a real forecast." if test_start else ""))
         chart_or_table(risk, tl[["month", "risk", "decline"]], "risk")
     with tab_peer:
         st.markdown(f"**Complaint rate vs. peers** — {peers['basis']} ({peers['n_peers']} with recent reviews)")
@@ -414,7 +430,8 @@ def page_restaurant():
 def page_alerts():
     st.title("🚨 Live complaint alerts")
     st.caption("Aspects whose complaint rate broke away from the restaurant's own 12-month baseline this month "
-               "(M3 robust z-score). Click a row to open the restaurant.")
+               "(M3 robust z-score). The Portfolio also counts spikes from the two months before, so its number is "
+               "larger. Click a row to open the restaurant.")
     rows = pd.DataFrame(load("alerts"))
     if rows.empty:
         st.success("Nothing is spiking right now.")
@@ -451,8 +468,9 @@ def page_analyse():
         texts = [t.strip() for t in text.splitlines() if t.strip()][:50]
         for res in client().analyse(texts):
             with st.container(border=True):
-                body = res["text"]
+                body = html.escape(res["text"])  # pasted text is shown as text, never as HTML
                 for a, sent in res["complaint_sentences"].items():
+                    sent = html.escape(sent)
                     body = body.replace(sent, f"<mark style='background:{ASPECT_COLORS[a]}40;color:inherit'>{sent}</mark>")
                 st.markdown(body, unsafe_allow_html=True)
                 chips = [f"{'👎' if lab == 'negative' else '👍'} {a} ({res['confidence'][a]:.0%})"
@@ -470,7 +488,9 @@ def page_models():
     m2 = ev.get("m2")
     if m2:
         for bench, res in m2["results"].items():
-            st.markdown(f"**Benchmark: {bench}** ({m2['benchmarks'][bench]['n']} labelled texts; "
+            role = (" — development set, used only to choose the production model" if bench.endswith("_dev")
+                    else " — held-out test set" if bench == "semeval2014" else "")
+            st.markdown(f"**Benchmark: {bench}**{role} ({m2['benchmarks'][bench]['n']} labelled texts; "
                         f"aspects: {', '.join(m2['benchmarks'][bench]['aspects'])})")
             st.dataframe(pd.DataFrame([{"model": r["model"], "macro-F1": r.get("macro_f1"),
                                         "complaint-F1": r.get("complaint_f1"),
@@ -481,21 +501,34 @@ def page_models():
     st.header("M3 · Emerging-complaint detection")
     m3 = ev.get("m3")
     if m3:
-        st.dataframe(pd.DataFrame([{"detector": k.replace("_", " "), **v} for k, v in m3.items() if isinstance(v, dict)]),
-                     hide_index=True, use_container_width=True)
-        st.caption(f"Base rate of a decline in the next 3 months: {m3['base_rate']:.1%}. Lift = precision ÷ base rate.")
+        st.dataframe(pd.DataFrame([{
+            "detector": k.replace("_", " "), "flag rate": v.get("flag_rate"), "lift": v.get("lift"),
+            "lift (random timing)": (v.get("chance") or {}).get("lift"),
+            "onsets detected %": v.get("onsets_detected_pct"),
+            "onsets detected % (random timing)": (v.get("chance") or {}).get("onsets_detected_pct"),
+            "lasting-drop lift": (v.get("lasting_drop") or {}).get("lift"),
+            "lasting-drop lift (random timing)": (v.get("chance") or {}).get("lasting_drop_lift"),
+            "median lead (mo)": v.get("median_lead_months")} for k, v in m3.items() if isinstance(v, dict)]),
+            hide_index=True, use_container_width=True)
+        st.caption(f"Base rate of a decline in the next 3 months: {m3['base_rate']:.1%}. Lift = precision ÷ base rate. "
+                   "'Random timing' moves each restaurant's alerts to random months - the level a detector with no "
+                   "timing information reaches. 'Lasting drop' = the next 3 months are ≥0.3★ below the 6-month "
+                   "rating from before the alert.")
 
     st.header("M4 · Rating-decline forecasting (out-of-time test)")
     m4 = ev.get("m4")
     if m4:
         sp = m4["split"]
         st.caption(f"Train {sp['train']} · validation {sp['valid']} · test {sp['test']} "
-                   f"({sp['n_test']:,} business-months, {sp['pos_rate_test']:.1%} declines). All models are "
-                   f"Platt-calibrated on the validation months.")
+                   f"({sp['n_test']:,} business-months, {sp['pos_rate_test']:.1%} declines"
+                   + (f"; {sp['gap_months']} months purged before each boundary" if sp.get("gap_months") else "")
+                   + "). All models are Platt-calibrated on the validation months. 'Warned % by random alerts' is "
+                   "the share the same number of alerts at random business-months would catch.")
         st.dataframe(pd.DataFrame([{
             "model": MODEL_LABELS.get(k, k), "AUROC": r["auroc"], "PR-AUC": r["pr_auc"], "Brier ↓": r.get("brier"),
             "precision@10%": r["precision_at_10pct"], "recall@10%": r["recall_at_10pct"],
             "onsets warned %": (r.get("early_warning") or {}).get("detected_pct"),
+            "warned % by random alerts": (r.get("early_warning") or {}).get("chance_detected_pct"),
             "median lead (mo)": (r.get("early_warning") or {}).get("median_lead_months")}
             for k, r in m4["results"].items()]), hide_index=True, use_container_width=True)
         if m4.get("injected_episodes"):
@@ -546,7 +579,10 @@ def page_models():
         k = st.columns(4)
         k[0].metric("Plans generated", m5["plans"])
         k[1].metric("Claims verified", f"{m5['claims_verified']}/{m5['claims_total']}")
-        k[2].metric("Groundedness", pct(m5["groundedness"]), help="Target ≥ 90%")
+        k[2].metric("Groundedness", pct(m5["groundedness"]),
+                    help="Target ≥ 90%. The rule-based planner builds its claims from exactly the figures and "
+                         "quotes the verifier checks, so it scores 100% by construction; the LLM planners and the "
+                         "adversarial planner are the real tests.")
         k[3].metric("Owner usefulness", f"{fb.get('mean_usefulness') or '–'} / 5",
                     help=f"{fb.get('n', 0)} ratings; target ≥ 4")
     if comp:
@@ -584,10 +620,10 @@ digraph {{ rankdir=LR; bgcolor="transparent";
 | Module | What it does |
 |---|---|
 | **M1** | Streams the 5 GB Yelp review file, keeps one city's restaurants, cleans & de-duplicates, writes parquet. |
-| **M2** | Fine-tuned DistilBERT tags each review's sentiment toward food, service, cleanliness, price and ambience — from the text, not the star rating. Trained by weak supervision; evaluated on human-labelled SemEval-2014. |
+| **M2** | Fine-tuned DistilBERT tags each review's sentiment toward food, service, cleanliness, price and ambience, reading the text. Trained by weak supervision (about 4 in 10 training labels still come from the star rating); chosen on a SemEval-2014 dev set and evaluated on the human-labelled SemEval-2014 test set. |
 | **M3** | Flags aspects whose complaint rate jumps above the restaurant's own history (robust z-score). |
 | **M4** | Predicts a significant ≥0.3★ drop over the next 3 months; a PyTorch GRU reads 12 months of signals incl. market-relative features. Explained twice — SHAP and a counterfactual — plus a star-cost estimate. |
-| **M5** | A LangGraph agent: Claude calls the analytics tools itself and submits a structured plan; a mechanical verifier rejects any claim that fails citation, quotation, relevance or statistic checks. A rule-based planner is the fallback and the baseline. |
+| **M5** | A LangGraph agent: Claude calls the analytics tools itself and submits a structured plan; a mechanical verifier rejects claims that fail its citation, quotation, relevance or statistic checks (traceability, not truth). A rule-based planner is the fallback and the baseline. |
 | **M6** | REST API (`/docs`) + this dashboard; one Docker image; Kubernetes Job, weekly CronJob and Deployments. |
 """)
     st.caption(f"Data client mode: {client().mode} · theme: {'dark' if IS_DARK else 'light'}")

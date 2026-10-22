@@ -14,6 +14,7 @@ Usage:
     python -m radview.pipeline                      # full run, auto source
     python -m radview.pipeline --fast               # skip DistilBERT (TF-IDF only)
     python -m radview.pipeline --mode rescore
+    python -m radview.pipeline --from-processed     # no raw Yelp files: reuse processed/ tables (M1 skipped)
     RADVIEW_SOURCE=synthetic python -m radview.pipeline
 """
 from __future__ import annotations
@@ -52,15 +53,22 @@ def build_trends_and_features() -> dict:
 
 
 def run(mode: str = "full", fast: bool = False, use_llm: bool | None = None, epochs: int = 2,
-        train_size: int = 6000) -> dict:
+        train_size: int = 6000, from_processed: bool = False) -> dict:
     timings = {}
     t = _step(f"M1 ingestion ({SOURCE})")
-    if SOURCE == "synthetic" and not (RAW_DIR / "yelp_academic_dataset_review.json").exists():
-        from radview.m1_ingest.synthetic import generate
-        generate(out_dir=RAW_DIR)
-    from radview.m1_ingest.ingest import run as ingest
-    city, cap, start = (YELP_CITY, YELP_MAX_RESTAURANTS, YELP_START_DATE) if SOURCE == "yelp" else (None, None, None)
-    ingest(city=city, max_restaurants=cap, start_date=start)
+    if from_processed:
+        # e.g. a machine that only has the trained-models bundle: keep the ingested tables, but re-derive the
+        # cuisine column, which needs only the stored categories.
+        from radview.m1_ingest.ingest import refresh_cuisine
+        refresh_cuisine()
+        print("[M1] skipped: re-using processed tables (cuisine recomputed)")
+    else:
+        if SOURCE == "synthetic" and not (RAW_DIR / "yelp_academic_dataset_review.json").exists():
+            from radview.m1_ingest.synthetic import generate
+            generate(out_dir=RAW_DIR)
+        from radview.m1_ingest.ingest import run as ingest
+        city, cap, start = (YELP_CITY, YELP_MAX_RESTAURANTS, YELP_START_DATE) if SOURCE == "yelp" else (None, None, None)
+        ingest(city=city, max_restaurants=cap, start_date=start)
     timings["m1"] = time.time() - t
 
     t = _step("M2 aspect classification")
@@ -87,7 +95,8 @@ def run(mode: str = "full", fast: bool = False, use_llm: bool | None = None, epo
     from radview.m5_agent.agent import run_batch
     from radview.m5_agent.cli import compare
     m5 = run_batch(use_llm=use_llm)
-    compare(20)  # rule-based vs adversarial (vs Claude when a key is set)
+    if mode == "full":  # evaluation only - the weekly rescore should not pay for LLM comparison runs
+        compare(20)  # rule-based vs adversarial (vs Claude when a key is set)
     timings["m5"] = time.time() - t
 
     summary = {"source": SOURCE, "mode": mode, "finished_at": datetime.now().isoformat(timespec="seconds"),
@@ -105,5 +114,8 @@ if __name__ == "__main__":
     ap.add_argument("--train-size", type=int, default=6000, help="weakly-labelled reviews for transformer fine-tuning")
     ap.add_argument("--llm", dest="use_llm", action="store_true", default=None, help="force LLM drafting in M5")
     ap.add_argument("--no-llm", dest="use_llm", action="store_false", help="force deterministic M5 planner")
+    ap.add_argument("--from-processed", action="store_true",
+                    help="skip M1 and reuse data/work/<source>/processed (when the raw Yelp files are not available)")
     args = ap.parse_args()
-    run(mode=args.mode, fast=args.fast, use_llm=args.use_llm, epochs=args.epochs, train_size=args.train_size)
+    run(mode=args.mode, fast=args.fast, use_llm=args.use_llm, epochs=args.epochs, train_size=args.train_size,
+        from_processed=args.from_processed)

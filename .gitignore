@@ -1,5 +1,6 @@
 # Data, models and pipeline outputs are reproducible and (for Yelp) not redistributable.
 data/
+data_select*/
 
 # Python
 __pycache__/

@@ -10,8 +10,9 @@ complementary, owner-readable quantities are computed here:
   It is an intervention on the model, so it captures interactions SHAP's
   additive split can blur - but it is associational, not causal.
 
-* **Star cost** - a ridge regression of monthly mean stars on per-aspect
-  complaint rates across the market. Its coefficients read as "every extra 10%
+* **Star cost** - a regression of monthly mean stars on per-aspect complaint
+  rates across the market, with every coefficient constrained to be <= 0 (a
+  complaint can cost stars, never earn them). Its coefficients read as "every extra 10%
   of reviews complaining about service costs about X stars"; multiplied by how
   far a restaurant sits above the market median, it estimates how many stars
   that problem is costing it today.
@@ -34,10 +35,13 @@ def fit_star_impact(panel: pd.DataFrame) -> dict[str, float]:
     """Stars lost per unit complaint rate for each aspect (negative numbers = cost)."""
     df = panel[panel["n_reviews"] >= MIN_REVIEWS_FOR_FIT]
     X = np.column_stack([df[f"{a}_neg"] / df["n_reviews"] for a in ASPECTS])
-    # Ridge, not OLS: aspect rates are correlated and unpenalised coefficients can flip sign,
-    # which would make an owner-facing explanation nonsensical. Weight months by review count.
-    model = Ridge(alpha=1.0).fit(X, df["mean_stars"], sample_weight=df["n_reviews"])
-    return {a: round(float(c), 4) for a, c in zip(ASPECTS, model.coef_)}
+    # Aspect rates are correlated, so unconstrained coefficients can flip sign (on Yelp, ambience came out
+    # +0.37: more complaints, more stars), which makes an owner-facing explanation nonsensical. Fitting on the
+    # negated rates with positive=True forces every effect to be a cost. Months are weighted by review count,
+    # normalised to mean 1 so that alpha keeps its usual scale (raw counts made the penalty negligible).
+    w = df["n_reviews"] / df["n_reviews"].mean()
+    model = Ridge(alpha=1.0, positive=True).fit(-X, df["mean_stars"], sample_weight=w)
+    return {a: round(float(-c), 4) + 0.0 for a, c in zip(ASPECTS, model.coef_)}  # + 0.0 turns -0.0 into 0.0
 
 
 def typical_aspect_frame(feat: pd.DataFrame, aspect: str) -> pd.DataFrame:
