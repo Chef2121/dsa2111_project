@@ -4,7 +4,7 @@ This guide is for group members who want to **use** the trained system — dashb
 without spending ~2 hours retraining. You need two things:
 
 1. **The code** — this GitHub repo (ask Daniel for collaborator access).
-2. **The trained-models bundle** — `Radview-trained-models-yelp.zip` (~320 MB, shared privately on the
+2. **The trained-models bundle** — `Radview-trained-models-yelp-v2.zip` (~320 MB, shared privately on the
    group drive). It holds the fine-tuned DistilBERT, the GRU forecaster, all scores, plans and evaluation
    results for 400 Philadelphia restaurants (Yelp, 2016–2021).
 
@@ -46,7 +46,7 @@ On **Linux**, install the small CPU build of PyTorch first to avoid a ~2 GB CUDA
 
 ### Add the trained models
 
-Unzip `Radview-trained-models-yelp.zip` **into the `dsa2111_project` folder** (the one containing
+Unzip `Radview-trained-models-yelp-v2.zip` **into the `dsa2111_project` folder** (the one containing
 `README.md`). You should end up with:
 
 ```
@@ -63,7 +63,7 @@ dsa2111_project/
 ```
 
 Windows: right-click the zip → *Extract All…* → choose the `dsa2111_project` folder.
-Mac/Linux: `unzip Radview-trained-models-yelp.zip -d dsa2111_project`
+Mac/Linux: `unzip Radview-trained-models-yelp-v2.zip -d dsa2111_project`
 
 **Check it worked** (should print `yelp` and `327`):
 
@@ -85,7 +85,7 @@ Activate the environment first in every new terminal (`.\.venv\Scripts\Activate.
 |---|---|---|
 | **Dashboard** | `python -m streamlit run dashboard/app.py` | http://localhost:8501 |
 | **REST API** (+ interactive docs) | `python -m uvicorn radview.api.main:app --port 8000` | http://localhost:8000/docs |
-| **Tests** (23, ~30 s) | `python -m pytest -q` | — |
+| **Tests** (43, ~1 min) | `python -m pytest -q` | — |
 | **One action plan in the terminal** | `python -m radview.m5_agent.cli` | — |
 | **Planner comparison** (rule-based vs adversarial) | `python -m radview.m5_agent.cli --compare 20` | — |
 
@@ -125,9 +125,9 @@ Dashboard → **Model performance**, or read [`docs/RESULTS.md`](RESULTS.md) (ta
 
 | Model | Test | Result |
 |---|---|---|
-| Aspect classifier (DistilBERT) | SemEval-2014, 800 human-labelled sentences | macro-F1 **0.737**, complaint-F1 **0.567** |
-| Decline forecaster (PyTorch GRU) | Out-of-time test, Apr 2020 – Sep 2021 | AUROC **0.727**, PR-AUC **0.171** (best: rating-trend LogReg 0.738 / 0.205) |
-| Agent verifier | 20 riskiest restaurants | rule-based plans **100%** verified; fabricated plans **0%** |
+| Aspect classifier (DistilBERT) | SemEval-2014, 800 human-labelled sentences | macro-F1 **0.750**, complaint-F1 **0.580** |
+| Decline forecaster (PyTorch GRU) | Out-of-time test, Apr 2020 – Sep 2021 | AUROC **0.708**, PR-AUC **0.161** (best: rating-trend LogReg 0.734 / 0.201) |
+| Agent verifier | 20 riskiest restaurants | rule-based plans **100%** verified (by construction); fabricated plans **0%**; free Qwen planner **59%** |
 
 ### d) Re-run the evaluations yourself (optional)
 

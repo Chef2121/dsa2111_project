@@ -35,18 +35,21 @@ Results from the latest run are in **[docs/RESULTS.md](docs/RESULTS.md)** (regen
 **[docs/TEST_OUTPUTS.md](docs/TEST_OUTPUTS.md)** collects every test output in one file (all metrics, the pre-COVID
 check, training curves, planner comparison, every pytest result, raw JSON); **[docs/FINDINGS.md](docs/FINDINGS.md)** interprets them — including what did *not* work on real data.
 
-**Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best CPU aspect model on human-labelled
-SemEval-2014 (macro-F1 0.737, complaint-F1 0.567), though a zero-shot open LLM (Qwen 2.5 7B, GPU) reaches 0.842 / 0.748 at
-~127× the time per sentence; the agent's 53 plans are 100% verified while an adversarial planner is
-100% rejected; but a rating-trend logistic regression (AUROC 0.738) edges out the PyTorch GRU (0.727) at forecasting
-declines, and complaint spikes do not anticipate declines at monthly granularity — see FINDINGS for why.
+**Headline on real Yelp data (Philadelphia, 2016–2021):** fine-tuned DistilBERT is the best trained aspect model on
+human-labelled SemEval-2014 (macro-F1 0.750, complaint-F1 0.580), though a zero-shot open LLM (Qwen 2.5 7B, GPU) reaches
+0.842 / 0.748 at ~840× the time per sentence; the verifier rejects 100% of an adversarial planner's claims (including
+realistic wrong-figure claims) and passes 59% of the free LLM planner's (the rule-based planner is 100% by construction);
+a rating-trend logistic regression (AUROC 0.734) beats the PyTorch GRU (0.708) at forecasting declines, and only it
+warns of declines clearly better than random alerts. Complaint spikes do not anticipate a further decline at monthly
+granularity, but they do mark lasting damage (lift 1.35 vs 1.07 for random timing). Every conclusion also holds on a
+survivor-free restaurant selection ([docs/ROBUSTNESS_SELECTION.md](docs/ROBUSTNESS_SELECTION.md)) — see FINDINGS for why.
 
 ---
 
 ## Run it with the already-trained models (group members start here)
 
 No retraining needed — about 10 minutes. You need this repo plus the private bundle
-**`Radview-trained-models-yelp.zip`** (~320 MB, on the group drive; it contains Yelp review text, so keep it
+**`Radview-trained-models-yelp-v2.zip`** (~320 MB, on the group drive; it contains Yelp review text, so keep it
 within the group and never commit it).
 
 **1. Get the code and install** (Python 3.10/3.11; on Windows tick *"Add python.exe to PATH"* when installing Python)

@@ -26,9 +26,17 @@ FILES = {
     YELP / "pipeline_run.json": "pipeline_run.json",                      # module run times
     ROOT / "data" / "work" / "yelp" / "processed" / "ingest_report.json": "ingest_report.json",  # Table II
 }
+# Restaurant-selection robustness check (2016 selection, see docs/GPU_RERUN.md); copied when that run exists.
+ROBUST = ROOT / "data_select2016" / "work" / "yelp" / "outputs"
+OPTIONAL = {ROBUST / f"{name}.json": f"robust_select2016_{name}.json"
+            for name in ("m2_evaluation", "m3_evaluation", "m4_evaluation", "m5_planner_comparison")}
 
 if __name__ == "__main__":
     DST.mkdir(exist_ok=True)
     for src, name in FILES.items():
         shutil.copy(src, DST / name)
         print(f"{src.relative_to(ROOT)} -> docs/report/inputs/{name}")
+    for src, name in OPTIONAL.items():
+        if src.exists():
+            shutil.copy(src, DST / name)
+            print(f"{src.relative_to(ROOT)} -> docs/report/inputs/{name}")

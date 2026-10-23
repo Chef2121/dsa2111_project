@@ -5,7 +5,7 @@ Contents
     2. Dataset (M1) and run times
     3. M2 aspect classification - every model, benchmark, aspect and metric
     4. M3 complaint-spike detection
-    5. M4 decline forecasting - main (COVID-era) test, pre-COVID test (Table VII), synthetic injected episodes,
+    5. M4 decline forecasting - main (COVID-era) test, pre-COVID test (Table XI), synthetic injected episodes,
        GRU training curves, attribution agreement, star-impact model, top features
     6. M5 action plans - batch groundedness and planner comparison
     7. Automated tests - the result of every pytest test, run now
@@ -79,20 +79,21 @@ def git_commit() -> str:
 def section_index() -> list[str]:
     rows = [
         ["Dataset after ingestion (M1)", "Table II", "`python -m radview.m1_ingest.ingest`", "`ingest_report.json`"],
-        ["Aspect classification (M2)", "Table IV, Fig. 4", "`python -m radview.m2_aspects.train`", "`m2_evaluation.json`"],
-        ["Complaint-spike detection (M3)", "Table V", "`python -m radview.pipeline` (M3 step)", "`m3_evaluation.json`"],
-        ["Decline forecasting, main test 2020-04–2021-09 (M4)", "Table VI, Fig. 5, Table VII left",
+        ["Aspect classification (M2)", "Table VIII, Fig. 4", "`python -m radview.m2_aspects.train`", "`m2_evaluation.json`"],
+        ["Complaint-spike detection (M3)", "Table IX, Fig. 5", "`python -m radview.pipeline` (M3 step)", "`m3_evaluation.json`"],
+        ["Decline forecasting, main test 2020-04–2021-09 (M4)", "Table X, Fig. 6, Fig. 7, Table XI left",
          "`python -m radview.m4_forecast.train`", "`m4_evaluation.json`, `m4_test_predictions.parquet`"],
-        ["Decline forecasting, pre-COVID test 2018-07–2019-12", "Table VII right",
+        ["Decline forecasting, pre-COVID test 2018-07–2019-12", "Table XI right",
          "`python -m radview.m4_forecast.train --test-end 2019-12`", "`m4_evaluation_test_end_2019-12.json`"],
         ["Injected deterioration episodes (synthetic)", "Sec. IV-D",
          "`RADVIEW_SOURCE=synthetic python -m radview.m4_forecast.train`", "`m4_evaluation_synthetic.json`"],
-        ["Action plans, batch (M5)", "Sec. IV-G", "`python -m radview.m5_agent.agent`", "`m5_evaluation.json`"],
-        ["Planner comparison (M5)", "Table VIII", "`python -m radview.m5_agent.cli --compare 20`",
+        ["Action plans, batch (M5)", "Sec. IV-H", "`python -m radview.m5_agent.agent`", "`m5_evaluation.json`"],
+        ["Planner comparison (M5)", "Table XIII", "`python -m radview.m5_agent.cli --compare 20`",
          "`m5_planner_comparison.json`"],
-        ["Open-model planner detail (M5)", "Sec. IV-G",
-         "`RADVIEW_LLM_PROVIDER=open python -m radview.m5_agent.cli --compare 20`", "`m5_open_model_summary.json`"],
-        ["Automated tests", "Sec. IV-H", "`python -m pytest -v`", "run when this file is generated"],
+        ["Restaurant-selection robustness check", "Table XII",
+         "`RADVIEW_DATA_DIR=data_select2016 python -m radview.pipeline --from-processed`",
+         "`robust_select2016_*.json`, [`ROBUSTNESS_SELECTION.md`](ROBUSTNESS_SELECTION.md)"],
+        ["Automated tests", "Sec. IV-I", "`python -m pytest -v`", "run when this file is generated"],
     ]
     return ["## 1. Index", "", "All source files are in [`docs/report/inputs/`](report/inputs/). Every run uses fixed "
             "random seeds; re-running a command on the trained-models bundle reproduces its numbers exactly.", ""] + \
@@ -188,13 +189,13 @@ def section_m4() -> list[str]:
            "z ≥ 1.645). All models are Platt-calibrated on the validation months. P@10% / R@10% = precision / recall "
            "in the riskiest 10% of test restaurant-months; *Onsets warned* = decline onsets flagged within the previous "
            "6 months when each model may flag 15% of months.", "",
-           "### 5.1 Main test window (COVID era) — Table VI", "", _split(m4["split"]), ""]
+           "### 5.1 Main test window (COVID era) — Table X", "", _split(m4["split"]), ""]
     out += table(M4_HEAD, _m4_rows(m4["results"]))
-    out += ["### 5.2 Pre-COVID test window — Table VII (right column)", "",
+    out += ["### 5.2 Pre-COVID test window — Table XI (right column)", "",
             "Command: `python -m radview.m4_forecast.train --test-end 2019-12` (labels after Dec 2019 hidden; "
             "evaluation only, deployed models untouched).", "", _split(pre["split"]), ""]
     out += table(M4_HEAD, _m4_rows(pre["results"]))
-    out += ["*Table VII as printed in the report (AUROC / PR-AUC):*", ""]
+    out += ["*Table XI as printed in the report (AUROC / PR-AUC):*", ""]
     out += table(["Model", "2020-04 – 2021-09", "2018-07 – 2019-12"],
                  [[MODEL.get(k, k), f"{m4['results'][k]['auroc']:.3f} / {m4['results'][k]['pr_auc']:.3f}",
                    f"{pre['results'][k]['auroc']:.3f} / {pre['results'][k]['pr_auc']:.3f}"]
@@ -224,7 +225,7 @@ def section_m4() -> list[str]:
     out += ["Top LightGBM features (all-features model, mean |SHAP| on the test set):", ""]
     out += table(["Feature", "Mean abs SHAP"], [[f"`{k}`", f"{v:.4f}"] for k, v in m4["lgbm_top_features_shap"].items()])
     tp = pd.read_parquet(INP / "m4_test_predictions.parquet")
-    out += [f"Test-set predictions behind Fig. 5: `m4_test_predictions.parquet` — {len(tp):,} rows "
+    out += [f"Test-set predictions behind Fig. 6: `m4_test_predictions.parquet` — {len(tp):,} rows "
             f"({tp['business_id'].nunique()} restaurants × months), columns {', '.join(f'`{c}`' for c in tp.columns)}.", ""]
     return out
 
@@ -236,7 +237,7 @@ def section_m5() -> list[str]:
     out += table(["Plans", "Claims", "Verified", "Groundedness", "Planner(s)", "Median latency"],
                  [[b["plans"], b["claims_total"], b["claims_verified"], pct(b["groundedness"]),
                    ", ".join(f"{k} × {v}" for k, v in b["planners"].items()), f"{b['median_latency_s']} s"]])
-    out += [f"### 6.2 Planner comparison — Table VIII ({c['restaurants']} riskiest restaurants)", "",
+    out += [f"### 6.2 Planner comparison — Table XIII ({c['restaurants']} riskiest restaurants)", "",
             "Rejections per verifier axis (one claim can fail several axes).", ""]
     out += table(["Planner", "Ran as", "Claims", "Verified", "Groundedness", "Citation", "Quotation", "Relevance",
                   "Statistic", "Substance", "Items / plan", "Median latency (s)", "Tool calls"],

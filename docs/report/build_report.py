@@ -13,6 +13,7 @@ import re
 import sys
 from pathlib import Path
 
+import pandas as pd
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -30,9 +31,14 @@ m2 = json.loads((Y / "m2_evaluation.json").read_text())
 m3 = json.loads((Y / "m3_evaluation.json").read_text())
 m4 = json.loads((Y / "m4_evaluation.json").read_text())
 m5c = json.loads((Y / "m5_planner_comparison.json").read_text())
-m5o = json.loads((Y / "m5_open_model_summary.json").read_text(encoding="utf8"))
+m5b = json.loads((Y / "m5_evaluation.json").read_text())
+rob = {k: json.loads((Y / f"robust_select2016_{k}.json").read_text())
+       for k in ("m2_evaluation", "m3_evaluation", "m4_evaluation", "m5_planner_comparison")}
 m4s = json.loads((Y / "m4_evaluation_synthetic.json").read_text())
 m4pre = json.loads((Y / "m4_evaluation_test_end_2019-12.json").read_text())
+res2 = {r["model"]: r for r in m2["results"]["semeval2014"] if "macro_f1" in r}
+LLM_SLOWDOWN = round(res2["zero_shot_llm"]["inference_ms_per_review"]
+                     / res2["distilbert_finetuned"]["inference_ms_per_review"], -1) if "zero_shot_llm" in res2 else None
 
 FONT = "Times New Roman"
 COL_W = Inches(3.45)
@@ -109,7 +115,8 @@ def bullets(items: list[str]):
         add_runs(p, "• " + it)
 
 
-_ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+_ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI",
+          "XVII", "XVIII", "XIX", "XX"]
 _h1 = [0]
 _h2 = [0]
 
@@ -270,24 +277,28 @@ p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 r = p.add_run("Abstract—")
 r.bold, r.italic, r.font.size = True, True, Pt(9)
 add_runs(p, (
-    "Online ratings drive restaurant revenue, yet owners usually discover a reputation problem only after their average "
+    "Online ratings drive restaurant revenue, yet owners discover a reputation problem only after their average "
     "rating has already fallen, and the aggregate score never says what to fix. Existing research predicts permanent "
     "business failure from rating sequences, and commercial review analytics report overall sentiment; both describe "
     "the past and stop at diagnosis. We present Radview, a cloud-native system that warns owners of an impending rating "
-    "decline and tells them, with cited review evidence, which operational problem to address first. Radview streams "
-    "the Yelp Open Dataset, labels every review's sentiment toward food, service, cleanliness, price and ambience with "
+    "decline and tells them, with cited review evidence, which operational problem to address first. Radview labels "
+    "every Yelp review's sentiment toward food, service, cleanliness, price and ambience with "
     "a DistilBERT model fine-tuned by weak supervision, tracks aspect-level complaint rates with robust control charts, "
     "and forecasts a statistically significant 0.3-star decline over the next three months with a calibrated "
-    "PyTorch GRU over twelve-month feature sequences. Forecasts are explained twice, by SHAP and by a counterfactual "
-    "intervention, and an agent built with LangGraph turns them into a ranked action plan whose every claim is checked "
-    "by a mechanical five-axis verifier before an owner sees it. The system runs as Docker containers on Kubernetes in AWS "
-    "behind a REST API and an owner dashboard. On 152,649 reviews of 397 Philadelphia restaurants (2016–2021), the "
-    "aspect model reaches macro-F1 0.737 on human-labelled SemEval-2014 sentences, ahead of TF-IDF and lexicon "
-    "baselines but behind a zero-shot open LLM (0.842) that is ~127× slower; all 265 claims in 53 real action plans pass verification while 100% of claims from "
-    "an adversarial planner are rejected, and a free open model (Qwen 2.5 7B) acting as the agent gets only 69% of "
-    "its claims verified. On an out-of-time, COVID-era test period the GRU (AUROC 0.727) is the best "
-    "learned multi-signal model, but a rating-trend logistic regression is marginally better (0.738), and complaint "
-    "spikes do not anticipate declines at monthly granularity."),
+    "PyTorch GRU. Forecasts are explained by SHAP and a counterfactual, and a LangGraph agent turns them "
+    "into a ranked action plan whose every claim is checked by a mechanical five-axis verifier before an owner sees "
+    "it. The system runs as Docker containers on Kubernetes in AWS, behind a REST API and an owner dashboard. On "
+    "152,649 reviews of 397 Philadelphia restaurants, the "
+    f"aspect model reaches macro-F1 {res2['distilbert_finetuned']['macro_f1']:.3f} on human-labelled SemEval-2014 "
+    f"sentences, ahead of TF-IDF and lexicon baselines but behind a zero-shot open LLM "
+    f"({res2['zero_shot_llm']['macro_f1']:.3f}) that is ~{LLM_SLOWDOWN:.0f}× slower; the verifier rejects every claim of an "
+    f"adversarial planner, including realistic wrong-figure claims, and passes only "
+    f"{m5c['planners']['open_model']['groundedness']:.0%} of the claims of a free open model (Qwen 2.5 7B) acting as "
+    f"the agent. On an out-of-time, COVID-era test period a rating-trend logistic regression (AUROC "
+    f"{m4['results']['rating_logreg']['auroc']:.3f}) beats the GRU ({m4['results']['radview_gru']['auroc']:.3f}) and "
+    "is the only model whose early warnings clearly beat random alerts; complaint spikes do not anticipate a further "
+    "decline at monthly granularity but do mark lasting damage, and all conclusions hold on a survivor-free selection "
+    "of restaurants."),
     size=9, bold=True)
 p = doc.add_paragraph()
 p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -329,14 +340,15 @@ para("Our approach is to decompose reviews into aspect-level complaints with a t
      "closure gives owners an earlier, milder signal with room to intervene. The main contributions are:")
 bullets([
     "**An aspect-to-action pipeline on real data.** Weakly supervised aspect-level sentiment read from review text "
-    "(the star rating only fills in polarity for opinion-less sentences in the training labels) feeds complaint monitoring, a calibrated decline forecaster with two independent "
+    "(the star rating only fills in polarity for opinion-less sentences in the training labels — about 4 in 10 "
+    "labels) feeds complaint monitoring, a calibrated decline forecaster with two independent "
     "explanations, and an action planner — evaluated on 152,649 real Yelp reviews and on human-labelled "
     "SemEval-2014 sentences.",
     "**A grounded agent with a five-axis verifier.** A LangGraph agent in which an LLM — Claude, or a free open-weight "
     "model served on our own GPU — chooses which analytics tools to call, with a deterministic planner as fallback "
     "and baseline; every claim is checked for citation, verbatim "
-    "quotation, aspect relevance, numeric fidelity and substance, and an adversarial planner demonstrates that "
-    "fabrications are rejected.",
+    "quotation, aspect relevance, numeric fidelity (each figure against the quantity its sentence names) and "
+    "substance, and an adversarial planner with blatant and realistic fabrications demonstrates that they are rejected.",
     "**A reproducible cloud-native deployment with honest evaluation.** Docker images gated by tests, Kubernetes "
     "jobs and services, a REST API and an owner dashboard; and an evaluation against six forecasting baselines "
     "that reports where the proposal's hypotheses did *not* hold.",
@@ -370,7 +382,8 @@ para("Hu and Liu [6] introduced feature-based opinion mining with frequent nouns
      "post-training [13] gives large gains when trained on SemEval's own labels. DistilBERT [11] retains most of "
      "BERT's accuracy at 40% fewer parameters, which matters for CPU-only serving. Because Yelp has no aspect labels, "
      "we follow the weak-supervision paradigm popularised by Snorkel [14], in which noisy heuristic labels train a "
-     "model that generalises beyond the heuristics; unlike [12], [13], our model never sees SemEval training labels.")
+     "model that generalises beyond the heuristics; unlike [12], [13], our model is never trained on SemEval labels — "
+     "800 sentences of the SemEval training file serve only to choose between our two trained models.")
 h2("Monitoring, Forecasting and Evaluation")
 para("Exponentially weighted moving-average control charts [15] are a standard tool for detecting gradual drift in "
      "process quality; we apply them to complaint rates, and replace the mean/standard-deviation scale with the median "
@@ -401,7 +414,7 @@ table("Comparison with closest related systems",
       ["", "[4]", "[5]", "Review dashboards", "Radview"],
       [["Outcome predicted", "Closure", "Closure", "None", "Rating decline"],
        ["Aspect decomposition", "No", "Topics", "Sometimes", "5 aspects"],
-       ["Aspect polarity from text", "No", "Yes", "Varies", "Yes (DistilBERT)"],
+       ["Aspect polarity from text", "No", "Yes", "Varies", "Mostly (DistilBERT)"],
        ["Leak-free time split", "Yes", "No", "n/a", "Yes"],
        ["Explanation of risk", "Latent state", "No", "No", "SHAP + counterfactual"],
        ["Actionable plan", "No", "No", "No", "Yes, verified"],
@@ -436,8 +449,13 @@ para("The Yelp Open Dataset review file is 5.3 GB of JSON lines (6,990,280 revie
      "(user, business, text), and the final partial calendar month discarded because a half-observed month would "
      "look like a collapse in review volume. Check-ins and tips are aggregated to business-months. Outputs are "
      "Parquet tables plus a data-quality report. A preflight command summarises restaurants and reviews per city "
-     "from the business file in seconds, so a user can choose a slice before ingesting. Table II gives the resulting "
-     "dataset; a Yelp-format simulator with injected deterioration episodes provides a second, controlled dataset.")
+     "from the business file in seconds, so a user can choose a slice before ingesting. Selecting on the *final* review "
+     "count favours restaurants that survived (82% of the slice is still open, against 60% of all Philadelphia "
+     "restaurants), so a second slice — the 400 restaurants with the most reviews in 2016, using no information from "
+     "after the start of the study — serves as a robustness check (Section V). Each restaurant's cuisine, used to pick "
+     "comparable peers, is its most common food category, skipping venue and drinks tags such as *Nightlife* or *Bars*. "
+     "Table II gives the resulting dataset; a Yelp-format simulator with injected deterioration episodes provides a "
+     "controlled third dataset.")
 table("Dataset after ingestion (Yelp, Philadelphia)",
       ["Quantity", "Value"],
       [["Restaurants (top 400 by reviews; with 2016+ reviews)", "397"],
@@ -453,17 +471,22 @@ para("Each review receives one of three labels — *not mentioned*, *positive* o
      "aspects. Because Yelp provides no aspect labels, we generate them by weak supervision. Each sentence is "
      "assigned to the aspects whose seed terms it contains (e.g. *waiter*, *waited* → service; *sticky*, *restroom* → "
      "cleanliness); its polarity comes from positive and negative opinion words with a three-token negation window "
-     "(*not clean* is a complaint). Only when a sentence carries no opinion word do we fall back on the review's star "
-     "rating. Generic words such as *ordered* or *dinner* are excluded from the seed lists after we found they "
-     "copied the star rating onto neutral sentences. On 40,000 weakly labelled reviews, food is mentioned in 85% of "
-     "reviews and cleanliness in only 7%, so the label distribution is highly imbalanced.")
+     "(*not clean* is a complaint, while *nothing but great* is not), and fixed phrases such as *can't wait to come "
+     "back* or *worth the wait* are ignored. Only when a sentence carries no opinion word do we fall back on the "
+     "review's star rating (4–5★ positive, 1–2★ negative; a mixed 3★ review gives no label) — which still supplies "
+     "about 4 in 10 labels, so the trained models learn partly from stars. Generic words such as *ordered* or *dinner* "
+     "are excluded from the seed lists after we found they copied the star rating onto neutral sentences. On 40,000 "
+     "weakly labelled reviews, food is mentioned in most reviews and cleanliness in only a few percent, so the label "
+     "distribution is highly imbalanced.")
 para("Three models are trained on these labels. The *lexicon rule* is the labeller itself. The *TF-IDF baseline* "
      "fits one class-balanced logistic regression per aspect on word uni- and bigrams. The proposed model fine-tunes "
      "DistilBERT [11]: the [CLS] representation feeds a linear layer with 5 × 3 outputs, one softmax head per aspect, "
      "trained with class-weighted cross-entropy (weights ∝ inverse class frequency^0.5) for two epochs on 6,000 "
-     "reviews (sequence length 128, AdamW, learning rate 3×10⁻⁵, warm-up and linear decay). For serving on CPU the "
+     "reviews (sequence length 256 — 128 tokens cut off about 40% of Yelp reviews — AdamW, learning rate 3×10⁻⁵, "
+     "warm-up and linear decay). For serving on CPU the "
      "encoder's linear layers are dynamically quantised to int8, which cut inference time by about 30% in our "
-     "measurements. The model with the best macro-F1 on the benchmark is selected automatically and scores every review. "
+     "measurements. The model with the best macro-F1 on a development set of 800 sentences from the SemEval-2014 "
+     "training file is selected automatically and scores every review; the SemEval test set is used only for reporting. "
      "As an untrained fourth baseline, a zero-shot LLM — the same open Qwen 2.5 7B model the agent uses, served by "
      "Ollama on a T4 GPU — is prompted to label each text directly and answer with a JSON object; it is "
      "evaluated but not used for scoring, because it needs a GPU and is far slower.")
@@ -472,12 +495,15 @@ h2("M3 — Emerging Complaint Detection")
 para("For restaurant *i*, aspect *a* and month *t*, the complaint rate is the share of reviews labelled negative on "
      "*a*. Monthly counts are sparse, so we smooth the numerator and denominator separately with an EWMA (span 3) "
      "and take their ratio, then compute a robust z-score against the restaurant's *own* previous twelve months:")
-para("*z*_{t} = (*r*_{t} − median(*r*_{t−12}, …, *r*_{t−1})) / max(1.4826·MAD, binomial s.e., 0.04).",
+para("*z*_{t} = (*r*_{t} − *m*_{t}) / max(1.4826·MAD_{t}, binomial s.e., 0.04),  *m*_{t} = median(*r*_{t−12}, …, *r*_{t−1}),",
      indent=False, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("The floor stops a perfectly stable history from producing an infinite score, and the binomial term widens the "
+para("where MAD_{t} is the median absolute deviation of the same twelve months from *m*_{t}. "
+     "The floor stops a perfectly stable history from producing an infinite score, and the binomial term widens the "
      "scale for low-volume restaurants. An aspect is flagged when *z* > 2.5 and at least two negative mentions occurred "
      "in the last two months, so that \"100% of two reviews\" cannot fire an alert. For comparison, the same detector "
-     "is applied to the smoothed star rating itself (a *rating alarm*).")
+     "is applied to the smoothed star rating itself (a *rating alarm*), with the sampling error of a mean rating "
+     "(star standard deviation / √*n*) in place of the binomial term. Every M3 result is reported next to a *random "
+     "timing* baseline: the same alerts moved to random months of the same restaurant.")
 
 h2("M4 — Rating-Decline Forecasting")
 para("M4 builds one row per restaurant-month (including months without reviews, so windows are true calendar "
@@ -497,17 +523,20 @@ para("The proposed forecaster is a GRU [17] that reads the last twelve months of
      "with a padding flag): a 64-unit projection with GELU and dropout, a 64-unit GRU, and a small head on the final "
      "hidden state. Three networks with different seeds are trained with class-weighted binary cross-entropy and "
      "early stopping on validation PR-AUC, averaged, and Platt-calibrated on the validation months [21]. Risk tiers "
-     "are defined as *lift* over the training base rate (≥1.5× medium, ≥2× high) because calibrated probabilities "
-     "for a 6% event rarely exceed 15%. Forecasts are explained in two ways: SHAP values from the expected-gradients "
+     "are defined as *lift* over the typical restaurant — the mean predicted risk of the restaurants active that month "
+     "(≥1.5× medium, ≥2× high) — because calibrated probabilities for a 6% event rarely exceed 20%. Forecasts are "
+     "explained in two ways: SHAP values from the expected-gradients "
      "estimator [23], [24], summed over time and grouped by aspect, and a counterfactual that resets one aspect's "
      "features to the market median for the whole window and re-runs the network [25]. A ridge regression of monthly "
-     "mean stars on aspect complaint rates converts \"how far above the market\" into an estimated star cost.")
+     "mean stars on aspect complaint rates, constrained so that a complaint can only cost stars, converts \"how far "
+     "above the market\" into an estimated star cost.")
 
 h2("M5 — Grounded Agentic Prioritisation")
 para("M5 is a LangGraph state machine (Fig. 2). It first calls four tools — *query_metrics*, *run_forecast*, "
      "*get_evidence_reviews* and *compare_peers* — each a thin, read-only function over the M2–M4 outputs scoped to "
      "one restaurant. Aspects are ranked by priority = (0.7·impact + 0.3·urgency) / effort, where impact averages each "
-     "aspect's share of positive SHAP and counterfactual attribution, urgency combines the M3 z-score and complaint "
+     "aspect's share of all risk-raising SHAP (non-aspect drivers such as the rating trend included) and the share of "
+     "the risk its counterfactual removes, urgency combines the M3 z-score and complaint "
      "growth, and effort is a stated assumption (cleanliness fixes are cheap; ambience needs capital). Evidence "
      "retrieval re-scores every sentence of candidate reviews with M2 and keeps a review only if its most negative "
      "sentence *on its own* is classified as a complaint about that aspect.")
@@ -525,12 +554,15 @@ para("Three planners sit behind the *draft* node. The **Claude planner** receive
      "when greedy decoding falls into a repetition loop that the server aborts, retries that turn once at temperature "
      "0.4. The **rule-based planner** fills templates from the same tool outputs and the action playbook; it is both the "
      "offline fallback and the baseline. The **verifier** then checks every claim on five axes: *citation* (the review "
-     "exists, belongs to this restaurant and was retrieved in this run), *quotation* (the quote appears verbatim), "
-     "*relevance* (M2 labels the review negative on the aspect and the quoted sentence alone is a complaint about it), "
-     "*statistic* (every percentage is within two points, and every star figure within 0.05, of a tool output) and "
-     "*substance* (a metric claim must state a checkable figure). Failing claims are removed, and the share that "
-     "passes is the plan's groundedness. A hallucinating planner that fabricates one claim per failure mode is part "
-     "of the test suite.")
+     "exists, belongs to this restaurant and was retrieved in this run), *quotation* (a quote is given and appears "
+     "verbatim), *relevance* (M2 labels the review negative on the aspect and the quoted sentence alone is a complaint "
+     "about it), *statistic* (every percentage is within two points, and every star figure within 0.05, of the tool "
+     "output its own clause refers to — the market median only where the clause mentions the market, the risk only "
+     "next to *risk* or *chance* — and multipliers such as *tripled* are rejected as uncheckable) and *substance* (a "
+     "metric claim must state a checkable figure). An LLM's summary and headlines are checked for unsupported figures "
+     "too. Failing claims are removed, and the share that passes is the plan's groundedness. A hallucinating planner "
+     "that fabricates one claim per failure mode, plus five realistic mistakes built from real figures and real "
+     "citations, is part of the test suite.")
 
 h2("M6 — Serving, Containers and Orchestration")
 para("A FastAPI service exposes ranked restaurants, per-restaurant metrics and timelines, action plans, live alerts, "
@@ -563,19 +595,100 @@ table("Implementation stack",
        ["Serving", "FastAPI, Uvicorn, Streamlit, Altair"],
        ["Deployment", "Docker (multi-stage), Kubernetes (k3s), AWS EC2 via NUS RONIN, pytest"]],
       [1.0, 2.4])
+para("Table IV lists the REST endpoints. They are thin wrappers over one read-side service layer that the dashboard "
+     "also calls in-process when no API is configured, so the two can never show different numbers. The service keeps "
+     "the pipeline outputs in memory and reloads them automatically when a newer pipeline run has finished, so the "
+     "weekly re-scoring job reaches a long-running API without a restart. Inputs are validated at the boundary "
+     "(known restaurant, known aspect, at most 200 texts per analysis call, usefulness between 1 and 5), and a plan "
+     "refresh requested through the API uses the rule-based planner unless the operator explicitly allows LLM calls, "
+     "because an LLM run costs money and the dashboard has no login.")
+table("REST API of the serving layer (M6)",
+      ["Endpoint", "Returns"],
+      [["GET /restaurants", "All monitored restaurants ranked by decline risk"],
+       ["GET /restaurants/{id}", "Metrics vs. market, forecast with SHAP, counterfactual and star cost, peers"],
+       ["GET /restaurants/{id}/timeline", "Monthly ratings, complaint rates vs. market, spikes, risk"],
+       ["GET /restaurants/{id}/reviews", "Review explorer, filtered by aspect and sentiment"],
+       ["GET /restaurants/{id}/plan", "Verified action plan with tool calls and rejected claims"],
+       ["GET /alerts", "This month's complaint spikes, most severe first"],
+       ["POST /analyse", "Aspect sentiment and complaint sentence for raw review texts"],
+       ["GET /evaluation", "M2–M5 evaluation results and M4 PR/ROC curves"],
+       ["POST /feedback", "Stores an owner's 1–5 usefulness rating of a plan"]],
+      [1.35, 2.05], size=7)
+para("Table V shows how the same image is orchestrated. A one-off Job trains and evaluates every model, a weekly "
+     "CronJob ingests new reviews and re-scores them with the saved models (no retraining, and no paid LLM "
+     "comparison runs), and two Deployments serve the API and the dashboard from a shared persistent volume, with "
+     "readiness and liveness probes so that Kubernetes restarts a stuck pod. An optional Deployment runs the "
+     "open-weight LLM server for the agent.")
+table("Kubernetes objects of the deployment",
+      ["Object", "Role"],
+      [["Job radview-train", "Full pipeline: ingest, train and evaluate every model, plans"],
+       ["CronJob radview-rescore", "Mondays 03:00: ingest, re-score with saved models, regenerate plans"],
+       ["Deployment radview-api", "FastAPI with readiness / liveness probes"],
+       ["Deployment radview-dashboard", "Streamlit, two replicas, talks to the API"],
+       ["PersistentVolumeClaim radview-data", "Shared data, models and outputs"],
+       ["Deployment ollama (optional)", "Open-weight LLM server (Qwen 2.5 7B) for the agent"]],
+      [1.45, 1.95], size=7)
+
+h2("Implementation Quality and Testing")
+para("Each module is a Python package with a single entry point and a docstring that states its inputs, outputs and "
+     "design decisions, and every tunable — thresholds, windows, model names, file locations — lives in one "
+     "configuration module that environment variables override, so the same code runs on a laptop, in Docker and "
+     "under Kubernetes. Correctness is checked by an automated suite of 43 tests (Table VI), which the Docker build "
+     "runs as a stage: an image cannot be built from code that fails its tests. The tests target the properties the "
+     "results depend on rather than lines of code: that features at month *t* never change when later months change; "
+     "that the time split leaves a three-month gap before each boundary; that the M3 baseline is the true median and "
+     "median absolute deviation of past months; that the verifier rejects real figures attached to the wrong "
+     "quantity, empty quotations and uncheckable multipliers while accepting the rule-based wording; and that the "
+     "LLM planners fall back to the rule-based planner when no model is reachable. A code review against the real "
+     "outputs found and fixed several such issues before the final run, including a temporal leak at the split "
+     "boundaries, model selection on the test set and a verifier that accepted any matching number; Section IV "
+     "reports the results after these fixes.")
+table("Automated test suite",
+      ["Area", "Tests", "Examples of what is checked"],
+      [["M1 ingestion", "3", "Restaurant filter, de-duplication, cuisine, first-year selection"],
+       ["M2 aspects", "7", "Negation, idioms, star fallback, zero-shot parsing"],
+       ["M3 trends", "3", "No alert before a spike, exact MAD, chance baseline"],
+       ["M4 forecast", "8", "No future leakage, purged split, padding, calibration, star costs"],
+       ["M5 agent", "14", "Verifier axes, adversarial plans, LLM tool loop and fallbacks"],
+       ["M6 serving", "8", "Endpoints, validation, 404s, reload after a new run"]],
+      [0.85, 0.4, 2.15], size=7)
+para("Table VII collects the main parameters of the pipeline. They are set once in the configuration module, "
+     "documented next to their value, and each can be overridden by an environment variable, which is how the "
+     "robustness runs in Section IV change the restaurant selection or the test window without touching the code.")
+table("Key parameters of the pipeline",
+      ["Module", "Parameter", "Value"],
+      [["M1", "Restaurants / city / start date", "400 / Philadelphia / Jan 2016"],
+       ["M2", "DistilBERT input / epochs / training reviews", "256 tokens / 2 / 6,000"],
+       ["M2", "TF-IDF n-grams / training reviews", "1–2 / 40,000"],
+       ["M3", "EWMA span / baseline window / minimum history", "3 / 12 / 6 months"],
+       ["M3", "Spike threshold / minimum recent complaints", "z > 2.5 / 2"],
+       ["M4", "Decline: drop / significance / horizon", "≥ 0.3★ / z ≥ 1.645 / 3 months"],
+       ["M4", "Minimum reviews past / future window", "6 / 3"],
+       ["M4", "Test / validation / purge gap", "18 / 6 / 3 months"],
+       ["M4", "GRU window / hidden size / ensemble", "12 months / 64 / 3 seeds"],
+       ["M4", "Risk tiers (lift over typical risk)", "≥ 1.5× medium, ≥ 2× high"],
+       ["M5", "Evidence per aspect / look-back", "3 reviews / 4 months"],
+       ["M5", "Verifier tolerance (rates / stars)", "± 2 points / ± 0.05★"],
+       ["Eval.", "Early-warning budget / look-back", "15% / 6 months"]],
+      [0.45, 1.75, 1.2], size=7)
 
 # =================================================================== IV. EXPERIMENTS
 h1("Experiment Evaluations and Performance Comparisons")
 h2("Experimental Setup")
 sp = m4["split"]
-para(f"All experiments ran on a 16-thread laptop CPU without a GPU. Forecasting uses a strict chronological split: "
+para(f"Models were trained and evaluated on one NVIDIA T4 GPU (AWS g4dn.xlarge via NUS RONIN); the deployed system "
+     f"serves them on CPU. Forecasting uses a strict chronological split: "
      f"training months {sp['train'].replace('..', '–')}, validation {sp['valid'].replace('..', '–')} and test "
      f"{sp['test'].replace('..', '–')} ({sp['n_train']:,}, {sp['n_valid']:,} and {sp['n_test']:,} labelled "
      f"restaurant-months; {sp['pos_rate_train']:.1%} and {sp['pos_rate_test']:.1%} positive in training and test). "
+     f"The {sp.get('gap_months', 3)} labelled months before each boundary are dropped, because their three-month label "
+     f"window reaches into the next period. "
      f"The test window coincides with the COVID-19 pandemic, a regime the models never saw in training. Metrics follow "
      f"Section II: macro-F1 and complaint-F1 for M2; precision, lift and lead time for M3; AUROC, PR-AUC, Brier score, "
      f"precision and recall in the riskiest 10% of restaurant-months, and early warning at a fixed 15% alert budget "
-     f"for M4; and groundedness for M5. Fixed random seeds make all reported numbers reproducible.")
+     f"for M4; and groundedness for M5. Alert-based results are reported next to a chance level — the same alerts at "
+     f"random times — because a detector that fires often warns of many declines by luck. Fixed random seeds make all "
+     f"reported numbers reproducible.")
 
 h2("Aspect Classification (M2)")
 res = {r["model"]: r for r in m2["results"]["semeval2014"] if "macro_f1" in r}
@@ -588,28 +701,35 @@ table("Aspect sentiment on SemEval-2014 restaurant test set",
        for k in ("lexicon_rule", "tfidf_logreg", "distilbert_finetuned", "zero_shot_llm") if k in res],
       [1.75, 0.55, 0.6, 0.5],
       note="800 human-labelled sentences; food, service, price, ambience (SemEval has no cleanliness category). "
-           "No model was trained on SemEval; the LLM may have seen the public benchmark during pre-training. "
-           "ms/sent.: CPU for the first three models, one NVIDIA T4 GPU for the LLM.")
-para("Table IV and Fig. 4 compare the aspect models on 800 human-labelled SemEval-2014 sentences that none of "
-     "them was trained on. Both learned models improve substantially on the lexicon rule that produced their training "
-     "labels (macro-F1 0.737 and 0.727 versus 0.660), which confirms that weak supervision generalises beyond its own "
-     "heuristics. DistilBERT is the best of the models that run on a CPU, and its advantage is concentrated where Radview needs it: "
-     "complaint-F1 rises from 0.512 to 0.567 (+11% relative), with the largest gains on service (0.689 → 0.746) and "
-     "ambience (0.227 → 0.348). TF-IDF remains slightly better on price (0.773 vs 0.748 macro-F1), where complaints use "
-     "a small, distinctive vocabulary (*overpriced*, *expensive*). Ambience is hardest for every model: it is mentioned "
-     "in only 28% of reviews and its complaints are lexically diverse. Fully supervised BERT models trained on "
-     "SemEval's own training set report higher scores [12], [13]; ours is a transfer result from noisy Yelp labels, "
-     "and DistilBERT costs about 6 ms per sentence on CPU against 0.06 ms for TF-IDF.")
+           "No model was trained on SemEval; the production model was chosen on 800 sentences of the SemEval training "
+           "file. The LLM may have seen the public benchmark during pre-training. ms/sent.: DistilBERT and the LLM on "
+           "one NVIDIA T4 GPU, the lexicon rule and TF-IDF on CPU.")
+tf, db = res["tfidf_logreg"], res["distilbert_finetuned"]
+lx = res["lexicon_rule"]
+tf_better = [a for a in ("food", "service", "price", "ambience")
+             if tf["macro_f1_per_aspect"][a] > db["macro_f1_per_aspect"][a]]
+para(f"Table VIII and Fig. 4 compare the aspect models on 800 human-labelled SemEval-2014 sentences that none of "
+     f"them was trained on. Both learned models improve substantially on the lexicon rule that produced their training "
+     f"labels (macro-F1 {f3(db['macro_f1'])} and {f3(tf['macro_f1'])} versus {f3(lx['macro_f1'])}), which confirms "
+     f"that weak supervision generalises beyond its own heuristics. DistilBERT is the most accurate trained model, and "
+     f"its advantage is concentrated where Radview needs it: complaint-F1 rises from {f3(tf['complaint_f1'])} to "
+     f"{f3(db['complaint_f1'])} (+{db['complaint_f1'] / tf['complaint_f1'] - 1:.0%} relative), with the largest gains "
+     f"on service ({f3(tf['complaint_f1_per_aspect']['service'])} → {f3(db['complaint_f1_per_aspect']['service'])}), "
+     f"price ({f3(tf['complaint_f1_per_aspect']['price'])} → {f3(db['complaint_f1_per_aspect']['price'])}) and "
+     f"ambience ({f3(tf['complaint_f1_per_aspect']['ambience'])} → {f3(db['complaint_f1_per_aspect']['ambience'])})."
+     + (f" TF-IDF remains marginally better on {', '.join(tf_better)} macro-F1." if tf_better else "")
+     + " Ambience is hardest for every model: it is mentioned in a minority of reviews and its complaints are "
+     "lexically diverse. Fully supervised BERT models trained on SemEval's own training set report higher scores "
+     "[12], [13]; ours is a transfer result from noisy Yelp labels.")
 if zs:
-    db = res["distilbert_finetuned"]
     para(f"The zero-shot LLM, given no training at all, is clearly more accurate: macro-F1 {f3(zs['macro_f1'])} and "
          f"complaint-F1 {f3(zs['complaint_f1'])}, ahead of DistilBERT on every aspect and most of all at detecting "
          f"complaints (food {f3(zs['complaint_f1_per_aspect']['food'])} vs "
          f"{f3(db['complaint_f1_per_aspect']['food'])}, ambience {f3(zs['complaint_f1_per_aspect']['ambience'])} vs "
          f"{f3(db['complaint_f1_per_aspect']['ambience'])}); all {zs['n_test']} replies were valid JSON. The price is "
-         f"speed and hardware: {zs['inference_ms_per_review']:.0f} ms per sentence on a T4 GPU against "
-         f"{db['inference_ms_per_review']:.1f} ms for DistilBERT on a CPU, so labelling all 152,649 reviews once would "
-         f"take well over a day of GPU time instead of under an hour on a laptop CPU (Sec. IV-H). The "
+         f"speed: {zs['inference_ms_per_review']:.0f} ms per sentence against {db['inference_ms_per_review']:.1f} ms for "
+         f"DistilBERT on the same T4 GPU (~{LLM_SLOWDOWN:.0f}×), so labelling all 152,649 reviews once would take well "
+         f"over a day of GPU time instead of about 14 minutes (Sec. IV-I). The "
          f"comparison may also flatter the LLM, since SemEval-2014 is public and could be in its pre-training data. "
          f"We therefore keep DistilBERT for scoring and read the gap as a target: replacing the lexicon weak labels with "
          f"LLM labels on a sample of Yelp reviews (distillation) is the most direct way to improve M2.")
@@ -620,19 +740,37 @@ figure(FIGS / "fig3_m2.png",
 h2("Emerging Complaint Detection (M3)")
 cs, ra = m3["complaint_spike"], m3["rating_alarm"]
 table("Do alerts anticipate a decline in the next three months?",
-      ["Detector", "Flagged", "Precision", "Lift", "Onsets warned", "Lead (mo)"],
-      [[n, f"{d['flag_rate']:.1%}", f"{d['precision']:.1%}", f"{d['lift']:.2f}", f"{d['onsets_detected_pct']}%",
+      ["Detector", "Flagged", "Lift", "Onsets warned", "Lasting-drop lift", "Lead (mo)"],
+      [[n, f"{d['flag_rate']:.1%}", f"{d['lift']:.2f} ({d['chance']['lift']:.2f})",
+        f"{d['onsets_detected_pct']}% ({d['chance']['onsets_detected_pct']}%)",
+        f"{d['lasting_drop']['lift']:.2f} ({d['chance']['lasting_drop_lift']:.2f})",
         f"{d['median_lead_months']:g}"] for n, d in (("Complaint spike", cs), ("Rating alarm", ra))],
-      [0.92, 0.44, 0.52, 0.34, 0.62, 0.52], size=7,
-      note=f"Base rate {m3['base_rate']:.1%}; {cs['onsets']} decline onsets; lift = precision / base rate.")
-para(f"Table V tests the proposal's central hypothesis: that aspect complaint spikes are a *leading* indicator. On "
+      [0.82, 0.42, 0.58, 0.74, 0.62, 0.4], size=7,
+      note=f"Base rate {m3['base_rate']:.1%}; {cs['onsets']} decline onsets; lift = precision / base rate. In brackets: "
+           f"the same alerts at random months of the same restaurant (chance level). Lasting drop = the next three months "
+           f"are ≥0.3★ below the six-month rating from three months earlier (base rate "
+           f"{cs['lasting_drop']['base_rate']:.0%}).")
+para(f"Table IX and Fig. 5 test the proposal's central hypothesis: that aspect complaint spikes are a *leading* indicator. On "
      f"real data they are not. Restaurant-months with a complaint spike are followed by a decline only "
-     f"{cs['precision']:.1%} of the time, below the {m3['base_rate']:.1%} base rate (lift {cs['lift']:.2f}), and only "
-     f"{cs['onsets_detected_pct']}% of decline onsets are preceded by a spike in the previous six months. The rating "
-     f"alarm is worse still (lift {ra['lift']:.2f}). We believe the main reason is regression to the mean: a spike "
-     f"typically arrives when the rating has *already* dropped, and because the label compares the next three months "
-     f"with the past six, the months after a spike tend to recover rather than fall further. M3 is therefore more "
-     f"useful as a *diagnostic* — it tells the owner which aspect broke — than as a forecaster, which is how the agent uses it.")
+     f"{cs['precision']:.1%} of the time, below the {m3['base_rate']:.1%} base rate (lift {cs['lift']:.2f}) and below "
+     f"what the same spikes reach at random times (lift {cs['chance']['lift']:.2f}); only "
+     f"{cs['onsets_detected_pct']}% of decline onsets are preceded by a spike in the previous six months, against "
+     f"{cs['chance']['onsets_detected_pct']}% by chance. The rating alarm is worse still (lift {ra['lift']:.2f}). The "
+     f"reason is regression to the mean: a spike typically arrives when the rating has *already* dropped, and because "
+     f"the label compares the next three months with a past window that contains the drop, the months after a spike "
+     f"tend to recover rather than fall further. Measured against the rating from *before* the alert, the picture "
+     f"reverses: after a complaint spike the next three months are at least 0.3★ below that earlier rating "
+     f"{cs['lasting_drop']['precision']:.0%} of the time, a lift of {cs['lasting_drop']['lift']:.2f} against "
+     f"{cs['chance']['lasting_drop_lift']:.2f} by chance, so spikes mark damage that lasts. M3 is therefore useful as a "
+     f"*diagnostic* — it tells the owner which aspect broke, and that the damage is real — rather than as a forecaster, "
+     f"which is how the agent uses it. Fig. 5 shows both targets side by side for both restaurant selections "
+     f"(Section IV-F): for the decline label every observed bar sits below its random-timing bar, while for the "
+     f"lasting-drop target the observed bars clearly exceed it — most of all for the rating alarm, which fires only "
+     f"once damage is already visible in the stars.")
+figure(FIGS / "fig6_m3_lift.png",
+       "Lift of M3 alerts over the base rate for two targets. Solid bars: observed; light bars: the same alerts at random "
+       "months of the same restaurant. Dotted line: no information (lift 1). Left: decline in the next three months "
+       "(the forecasting label). Right: next three months at least 0.3★ below the rating from before the alert.")
 
 h2("Rating-Decline Forecasting (M4)")
 names = {"majority": "Majority (base rate)", "current_negativity": "Current negativity (no model)",
@@ -643,41 +781,76 @@ rows = []
 for k, r in m4["results"].items():
     ew = r.get("early_warning") or {}
     rows.append([names[k], f3(r["auroc"]), f3(r["pr_auc"]), f"{r['brier']:.4f}", f3(r["precision_at_10pct"]),
-                 f"{ew['detected_pct']}%" if ew.get("detected_pct") is not None else "–"])
+                 f"{ew['detected_pct']}% ({ew['chance_detected_pct']}%)" if ew.get("detected_pct") is not None else "–"])
 table("Decline forecasting on the out-of-time test period",
-      ["Model", "AUROC", "PR-AUC", "Brier", "P@10%", "Warned"], rows, [1.22, 0.42, 0.44, 0.46, 0.42, 0.44], size=7,
+      ["Model", "AUROC", "PR-AUC", "Brier", "P@10%", "Warned"], rows, [0.98, 0.46, 0.44, 0.44, 0.44, 0.68], size=7,
       note="All models Platt-calibrated on validation. P@10% = precision in the riskiest 10% of restaurant-months; "
-           "Warned = decline onsets flagged within 6 months at a 15% alert budget.")
+           "Warned = decline onsets flagged within 6 months at a 15% alert budget (in brackets: the same number of "
+           "alerts at random restaurant-months).")
 g, lr = m4["results"]["radview_gru"], m4["results"]["rating_logreg"]
-para(f"Table VI and Fig. 5 compare seven forecasters, from a constant base rate to the full GRU. Every learned model "
-     f"beats the trivial baselines, and the GRU is the strongest model that uses all signals: AUROC {g['auroc']:.3f} "
-     f"and PR-AUC {g['pr_auc']:.3f}, ahead of every LightGBM variant (at most "
-     f"{m4['results']['sentiment_lgbm']['auroc']:.3f} and {m4['results']['sentiment_lgbm']['pr_auc']:.3f}), with "
-     f"precision {g['precision_at_10pct']:.1%} in its riskiest decile — about three times the {sp['pos_rate_test']:.1%} "
-     f"base rate. However, the simplest learned model, a logistic regression on rating-trend features, is marginally "
-     f"better on every ranking metric (AUROC {lr['auroc']:.3f}, PR-AUC {lr['pr_auc']:.3f}, and the most decline "
-     f"onsets warned). Fig. 5 shows why: its precision is higher at low recall, where an owner would set an alert "
-     f"threshold. Adding aspect features to LightGBM does not help either (AUROC "
+lg = {k: m4["results"][k] for k in ("rating_lgbm", "sentiment_lgbm", "radview_lgbm")}
+gw, lw = g["early_warning"], lr["early_warning"]
+para(f"Table X and Fig. 6 compare seven forecasters, from a constant base rate to the full GRU. Every learned model "
+     f"beats the trivial baselines. Among the models that use all signals the GRU has the best PR-AUC "
+     f"({g['pr_auc']:.3f}, against at most {max(v['pr_auc'] for v in lg.values()):.3f} for LightGBM) but not the best "
+     f"AUROC ({g['auroc']:.3f}, against up to {max(v['auroc'] for v in lg.values()):.3f}), with precision "
+     f"{g['precision_at_10pct']:.1%} in its riskiest decile — about {g['precision_at_10pct'] / sp['pos_rate_test']:.1f} "
+     f"times the {sp['pos_rate_test']:.1%} base rate. The simplest learned model, a logistic regression on rating-trend "
+     f"features, is better on every ranking metric (AUROC {lr['auroc']:.3f}, PR-AUC {lr['pr_auc']:.3f}, precision "
+     f"{lr['precision_at_10pct']:.1%} in its riskiest decile), and it is the only model whose early warnings clearly "
+     f"beat chance: it warns of {lw['detected_pct']}% of decline onsets, against {lw['chance_detected_pct']}% for the "
+     f"same number of random alerts (+{lw['detected_pct'] - lw['chance_detected_pct']:.0f} points; at most "
+     f"+{max(r['early_warning']['detected_pct'] - r['early_warning']['chance_detected_pct'] for k, r in m4['results'].items() if k not in ('majority', 'rating_logreg')):.0f} "
+     f"for any other model), while the GRU's {gw['detected_pct']}% is barely above its chance level of "
+     f"{gw['chance_detected_pct']}%. Fig. 6 shows why the logistic regression ranks best: its precision is higher at "
+     f"low recall, where an owner would set an alert threshold. Adding aspect features to LightGBM does not help either (AUROC "
      f"{m4['results']['radview_lgbm']['auroc']:.3f} vs {m4['results']['rating_lgbm']['auroc']:.3f} without them). "
      f"Consistent with M3, on this data *what* customers complain about does not improve a three-month decline forecast "
      f"beyond the rating trend itself; the most important LightGBM features by mean |SHAP| are the 6-month and "
      f"cumulative ratings. The COVID-era test window — review volume fell by more than half in 2020 — penalises the "
      f"higher-capacity models most; Section IV-E therefore repeats the comparison on a pre-pandemic test window.")
 figure(FIGS / "fig4_m4_pr.png",
-       "Precision–recall curves on the test period. The dotted line is the 7.0% base rate. The rating-trend logistic "
-       "regression dominates at low recall; the GRU is the strongest of the multi-signal models.")
-syn_g = m4s["injected_episodes"]["radview_gru"]
+       f"Precision–recall curves on the test period. The dotted line is the {sp['pos_rate_test']:.1%} base rate. The "
+       f"rating-trend logistic regression dominates at low recall; the GRU has the best PR-AUC of the multi-signal models.")
+
+
+def _deciles(col):
+    dec = pd.qcut(tp[col].rank(method="first"), 10, labels=False)
+    return tp.groupby(dec).agg(pred=(col, "mean"), obs=("decline", "mean"))
+
+
+tp = pd.read_parquet(Y / "m4_test_predictions.parquet")
+cal_g, cal_l = _deciles("radview_gru"), _deciles("rating_logreg")
+para(f"Ranking is only half of what an owner sees; the other half is the probability itself. Fig. 7 groups the test "
+     f"restaurant-months into deciles of predicted risk and compares the mean prediction with the share that actually "
+     f"declined. The GRU is well calibrated across the range: its mean prediction is {tp['radview_gru'].mean():.1%} "
+     f"against an observed {tp['decline'].mean():.1%}, and in its riskiest decile it predicts "
+     f"{cal_g['pred'].iloc[-1]:.1%} against {cal_g['obs'].iloc[-1]:.1%} observed. The logistic regression ranks better "
+     f"but overstates the risk of its riskiest restaurants ({cal_l['pred'].iloc[-1]:.1%} predicted against "
+     f"{cal_l['obs'].iloc[-1]:.1%} observed), so the two Brier scores are close ({lr['brier']:.4f} vs {g['brier']:.4f}) "
+     f"despite the ranking gap. Because both were calibrated on validation months before the pandemic, this "
+     f"agreement on the COVID-era test period is reassuring: the probabilities shown on the dashboard can be read "
+     f"at face value.")
+figure(FIGS / "fig7_m4_calibration.png",
+       "Calibration on the test period: mean predicted risk against the observed decline rate, by decile of predicted "
+       "risk. Points on the dotted diagonal are perfectly calibrated.")
+ep = m4s["injected_episodes"]
+syn_g, syn_lr = ep["radview_gru"], ep["rating_logreg"]
+lgbm_vis = [ep[k]["before_visible_pct"] for k in ("rating_lgbm", "sentiment_lgbm", "radview_lgbm")]
 agr = m4["attribution_agreement"]
+sic = agr["star_impact_coefficients"]
 para(f"On the simulator, where the timing of injected deterioration episodes is known, the GRU caught "
      f"{syn_g['detected_pct']}% of {syn_g['episodes']} episodes and {syn_g['before_visible_pct']}% before the drop "
-     f"was visible in the three-month rating — close to the rating-trend logistic regression (23.9%) and ahead of "
-     f"the LightGBM models (13.4–17.9%). The two explanation methods agree on the top aspect for "
-     f"{agr['all']['top_aspect_agreement']:.0%} of the {agr['all']['n']} restaurants (mean Spearman correlation "
-     f"{agr['all']['mean_spearman']:.2f}), which suggests the aspect ranking shown to owners is not an artefact of one "
-     f"method. The star-impact model assigns the largest costs to food ({agr['star_impact_coefficients']['food']:.2f} "
-     f"stars per unit complaint rate), service ({agr['star_impact_coefficients']['service']:.2f}) and cleanliness "
-     f"({agr['star_impact_coefficients']['cleanliness']:.2f}); ambience receives a small positive coefficient, a "
-     f"correlation artefact, so star costs are clipped at zero.")
+     f"was visible in the three-month rating, against {syn_lr['before_visible_pct']}% for the rating-trend logistic "
+     f"regression and {min(lgbm_vis)}–{max(lgbm_vis)}% for the LightGBM models; no model catches most episodes before "
+     f"they show. The two explanation methods agree on the top aspect for "
+     f"{agr['all']['top_aspect_agreement']:.0%} of the {agr['all']['n']} restaurants "
+     f"({agr['at_risk']['top_aspect_agreement']:.0%} of the {agr['at_risk']['n']} at risk; mean Spearman correlation "
+     f"{agr['all']['mean_spearman']:.2f}) — a moderate agreement, which is why the dashboard shows both. The star-impact "
+     f"model, constrained so that complaints can only cost stars, assigns the largest costs to food ({sic['food']:.2f} "
+     f"stars per unit complaint rate) and service ({sic['service']:.2f}), then cleanliness ({sic['cleanliness']:.2f}) "
+     f"and price ({sic['price']:.2f}); ambience comes out at {sic['ambience']:.2f} — unconstrained, it had a small "
+     f"positive coefficient, a correlation artefact.")
 
 h2("Robustness: A Pre-Pandemic Test Window")
 pre = m4pre["results"]
@@ -691,7 +864,7 @@ table("AUROC / PR-AUC in two test windows",
            f"{psp['n_test']:,} test restaurant-months ({psp['pos_rate_test']:.1%} positive). Evaluation only.")
 para(f"Because the main test window overlaps the pandemic, we repeated the comparison with all labels after December "
      f"2019 hidden, which moves the test window to July 2018 – December 2019 and leaves two years for training "
-     f"(Table VII). Absolute scores fall for every model — there is half as much training data — but the ordering is "
+     f"(Table XI). Absolute scores fall for every model — there is half as much training data — but the ordering is "
      f"unchanged: the rating-trend logistic regression remains best (AUROC {pre['rating_logreg']['auroc']:.3f}, "
      f"PR-AUC {pre['rating_logreg']['pr_auc']:.3f}), the GRU second ({pre['radview_gru']['auroc']:.3f}, "
      f"{pre['radview_gru']['pr_auc']:.3f}), and the LightGBM models degrade most (AUROC "
@@ -700,7 +873,39 @@ para(f"Because the main test window overlaps the pandemic, we repeated the compa
      f"simple model is therefore not a COVID artefact. It is better explained by sample size: with about 6% positives, "
      f"a few hundred decline events per year are too few for high-capacity models to learn interactions that a "
      f"linear model on well-chosen trend features does not already capture. The sequence model's inductive bias — "
-     f"reading the trajectory rather than hand-made windows — narrows but does not close that gap.")
+     f"reading the trajectory rather than hand-made windows — narrows but does not close that gap. In this window "
+     f"every model warns of fewer decline onsets than the same number of random alerts would, so no early-warning "
+     f"ability is shown before the pandemic either.")
+
+h2("Robustness: A Survivor-Free Restaurant Selection")
+rm2 = {r["model"]: r for r in rob["m2_evaluation"]["results"]["semeval2014"] if "macro_f1" in r}
+rm3, rm4, rm5 = rob["m3_evaluation"]["complaint_spike"], rob["m4_evaluation"]["results"], rob["m5_planner_comparison"]
+main_rows = [
+    ["Restaurants still open (2022)", "82%", "77%"],
+    ["M2 DistilBERT macro-F1 / complaint-F1", f"{f3(db['macro_f1'])} / {f3(db['complaint_f1'])}",
+     f"{f3(rm2['distilbert_finetuned']['macro_f1'])} / {f3(rm2['distilbert_finetuned']['complaint_f1'])}"],
+    ["M3 spike lift (chance)", f"{cs['lift']:.2f} ({cs['chance']['lift']:.2f})",
+     f"{rm3['lift']:.2f} ({rm3['chance']['lift']:.2f})"],
+    ["M3 lasting-drop lift (chance)", f"{cs['lasting_drop']['lift']:.2f} ({cs['chance']['lasting_drop_lift']:.2f})",
+     f"{rm3['lasting_drop']['lift']:.2f} ({rm3['chance']['lasting_drop_lift']:.2f})"],
+    *[[f"M4 {names[k].replace('**', '')}, AUROC / PR-AUC", f"{m4['results'][k]['auroc']:.3f} / {m4['results'][k]['pr_auc']:.3f}",
+       f"{rm4[k]['auroc']:.3f} / {rm4[k]['pr_auc']:.3f}"] for k in ("rating_logreg", "sentiment_lgbm", "radview_gru")],
+    ["M5 adversarial claims rejected", f"{1 - m5c['planners']['adversarial']['groundedness']:.0%}",
+     f"{1 - rm5['planners']['adversarial']['groundedness']:.0%}"],
+]
+table("Main analysis vs. a survivor-free restaurant selection",
+      ["Result", "Lifetime top 400", "2016 top 400"], main_rows, [1.6, 0.9, 0.9], size=7,
+      note="Both slices: Philadelphia, the same pipeline and seeds. 287 restaurants are in both; all Philadelphia "
+           "restaurants: 60% still open.")
+para(f"The main slice keeps the 400 restaurants with the most reviews by the end of the dataset, which uses future "
+     f"information: restaurants that later declined and closed are less likely to qualify. To test whether this "
+     f"matters we re-ran the whole pipeline on the 400 restaurants with the most reviews in 2016, which uses only "
+     f"information available at the start of the study. The two slices share 287 restaurants; of the 113 that enter, "
+     f"46 later closed. Table XII shows that every conclusion holds: DistilBERT's accuracy is within a point, "
+     f"complaint spikes again fall below chance as predictors yet mark lasting damage, the rating-trend logistic "
+     f"regression is again the best forecaster (AUROC {rm4['rating_logreg']['auroc']:.3f}), and the verifier again "
+     f"rejects every fabricated claim. The selection biases the sample towards successful restaurants, but not the "
+     f"findings.")
 
 h2("Discussion and Threats to Validity")
 para("*Construct validity.* Our decline label is a statistical construct; a restaurant owner may care about a smaller "
@@ -709,12 +914,17 @@ para("*Construct validity.* Our decline label is a statistical construct; a rest
      "and the split is chronological (both enforced by tests), but the aspect labels come from a model trained on "
      "reviews spanning the whole period; because M2 is trained on weak labels rather than on outcomes, we judge the "
      "resulting leakage negligible, and a stricter design would retrain M2 on training-period reviews only. "
+     "The validation months used for early stopping and calibration end in December 2019, so their labels reach into "
+     "the first pandemic months. "
      "*External validity.* The data cover one city and its 400 busiest restaurants, which are larger and better "
-     "reviewed than the typical independent restaurant Radview targets; a quieter restaurant produces exactly the "
-     "sparse, noisy signals that our small-sample caveat warns about. *Measurement.* SemEval sentences are shorter and "
-     "cleaner than Yelp reviews and have no cleanliness category, so M2's in-domain accuracy is unknown until the "
-     "exported Yelp sample is hand-labelled. Finally, the verifier proves traceability, not truth: a plan that "
-     "faithfully cites a miscalibrated forecast still passes.")
+     "reviewed than the typical independent restaurant Radview targets (mean 3.91★ against 3.56★ for all Philadelphia "
+     "restaurants); a survivor-free selection leaves the conclusions unchanged (Table XII), but a quieter restaurant "
+     "produces exactly the sparse, noisy signals that our small-sample caveat warns about. *Measurement.* SemEval "
+     "sentences are shorter and cleaner than Yelp reviews and have no cleanliness category, so M2's in-domain accuracy "
+     "is unknown until the exported Yelp sample is hand-labelled, and about 4 in 10 weak labels take their polarity "
+     "from the star rating. Finally, the verifier proves traceability, not truth: a plan that faithfully cites a "
+     "miscalibrated forecast still passes, figures written as words are not recognised, and its relevance check relies "
+     "on the same M2 model that selected the evidence.")
 
 h2("Grounded Action Plans (M5)")
 pl = m5c["planners"]
@@ -728,66 +938,95 @@ table("Planner comparison on the 20 riskiest restaurants",
       note="Last five columns: claims rejected on each verifier axis (a claim can fail several). Qwen 2.5 7B ran "
            "through Ollama on one NVIDIA T4 GPU (AWS g4dn.xlarge via NUS RONIN). The Claude planner could not be run: "
            "no API key was available.")
-para(f"Across all 53 at-risk restaurants, the rule-based planner produced 265 claims and all of them passed the "
-     f"verifier, with a median latency of 0.27 s per plan. This is expected by construction — the planner only "
-     f"restates tool outputs — so the verifier's value is shown by the adversarial planner (Table VIII): every one of its "
-     f"{pl['adversarial']['claims_total']} fabricated claims was rejected, and every axis fired, from invented review "
-     f"IDs (citation) to quoted praise passed off as complaints (relevance). Inspecting real plans exposed two issues "
-     f"we then fixed: rates such as \"33% of reviews\" can mean one of three reviews in the sparse late-2021 data, so "
-     f"plans now state counts and add a small-sample caveat below ten reviews; and generic keywords led some actions to "
-     f"default to generic advice.")
+para(f"Across all {m5b['plans']} at-risk restaurants, the rule-based planner produced {m5b['claims_total']} claims and "
+     f"all of them passed the verifier, with a median latency of {m5b['median_latency_s']:.2f} s per plan. This is "
+     f"expected by construction — the planner only restates tool outputs — so the verifier's value is shown by the "
+     f"adversarial planner (Table XIII): every one of its {pl['adversarial']['claims_total']} fabricated claims was "
+     f"rejected and every axis fired, from invented review IDs (citation) to quoted praise passed off as complaints "
+     f"(relevance) and, among the five realistic mistakes, real figures attached to the wrong quantity (statistic). "
+     f"Inspecting real plans exposed issues we then fixed: rates such as \"33% of reviews\" can mean one of three "
+     f"reviews in the sparse late-2021 data, so plans now state counts and add a small-sample caveat below ten reviews; "
+     f"and an earlier version of the verifier accepted a percentage that matched *any* returned figure and a review "
+     f"citation without a quote, which the stricter axes above close. Table XIV shows the verifier's decisions on "
+     f"representative claims for one restaurant; every row is also an automated test.")
+table("Verifier decisions on example claims",
+      ["Claim (restaurant: own complaint rate 12%, market 20%, risk 9%, rating 3.88★)", "Result"],
+      [["\"12 of 100 reviews (12%) complained about service, versus 5% in the six months before; the typical "
+        "restaurant in your market sits at 20%.\"", "Pass"],
+       ["\"Service complaints cost about 0.12 stars compared with the typical restaurant.\"", "Pass"],
+       ["\"20% of your reviews complain about service.\" (market median stated as own rate)", "Statistic"],
+       ["\"9% of your reviews complain about service.\" (decline risk stated as a rate)", "Statistic"],
+       ["\"Service problems are costing you 3.88 stars.\" (rating stated as a cost)", "Statistic"],
+       ["\"Service complaints have tripled: '…'\" (real quote, uncheckable multiplier)", "Statistic"],
+       ["Real retrieved review cited with an empty quote and invented content", "Quotation"],
+       ["Verbatim praise from a review presented as a complaint", "Relevance"],
+       ["Review of this restaurant that the agent never retrieved", "Citation"],
+       ["\"Service is clearly the main problem.\" (no checkable figure)", "Substance"]],
+      [2.75, 0.65], size=7,
+      note="Pass = shown to the owner; otherwise the failing verifier axis. Rejected claims are removed and logged.")
 qo = pl["open_model"]
-ex = m5o["rejected_examples_model_written"]
+own_calls = qo["mean_tool_calls"] - pl["rule_based"]["mean_tool_calls"]
 para(f"The open-model planner shows why the verifier is needed. Qwen 2.5 7B behaved as an agent — beyond the fixed "
-     f"analytics calls it chose {m5o['model_chosen_tool_calls_per_plan']} further tool calls per plan, mostly to fetch "
-     f"more review evidence or compare peers — but only {qo['claims_verified']} of its {qo['claims_total']} final "
-     f"claims ({qo['groundedness']:.1%}) passed verification. Of the {m5o['restaurants']} plans, "
-     f"{m5o['plans_fully_verified']} were fully grounded and {m5o['plans_redrafted_after_verifier_feedback']} needed a "
-     f"redraft after verifier feedback, but {m5o['plans_with_no_verified_claim']} ended with no verified claim. The "
-     f"rejected claims were mainly paraphrases presented as quotations ({qo['failures_by_axis']['quotation']}), metric "
-     f"claims with no checkable figure ({qo['failures_by_axis']['substance']}; e.g. \"{ex['substance']['claim']}\") and "
-     f"citations of reviews that were never retrieved, including invented identifiers such as \"r123\"; one stated a "
-     f"statistic the tools never returned (\"{ex['statistic']['claim']}\"). Owners therefore saw "
-     f"{m5o['owner_visible_items_with_verified_quote']} action items backed by a verified quotation, against "
-     f"{m5o['rule_based_items_with_verified_quote']} from the rule-based planner. A plan took a median of "
+     f"analytics calls it made about {own_calls:.0f} further tool calls per plan, mostly to fetch more review evidence "
+     f"or compare peers — but only {qo['claims_verified']} of its {qo['claims_total']} final claims "
+     f"({qo['groundedness']:.1%}) passed verification. It cited only reviews it had retrieved and quoted them "
+     f"verbatim, but {qo['failures_by_axis']['statistic']} claims stated a figure that does not match the quantity "
+     f"they name, or an uncheckable multiplier, and {qo['failures_by_axis']['substance']} metric claims stated no "
+     f"checkable figure at all. With the earlier, looser numeric check the same planner had scored 69%: the "
+     f"difference is exactly the wrong-quantity figures an owner could not spot. A plan took a median of "
      f"{qo['median_latency_s']:.1f} s and about {qo['mean_tokens']:,} tokens on one T4 GPU, at no per-token cost, and "
      f"its actions were largely adapted from the playbook. On this evidence a 7-billion-parameter open model adds "
      f"investigative flexibility but not more specific advice, and is only safe to show owners behind the verifier; "
      f"the Claude planner is implemented and tested but could not be measured without an API key.")
 
 h2("Comparison with Existing Methods and System Performance")
-para("Direct numerical comparison with [4] and [5] would be misleading: both predict permanent closure, an outcome "
+table("Side-by-side comparison with existing methods",
+      ["Method", "Predicts", "Use of review text", "Evaluation", "Reported result", "Action plan"],
+      [["VD-HMM [4]", "Closure", "One sentiment score per review", "Out-of-sample", "AUC 85.2%", "No"],
+       ["CNN–DNN [5]", "Closure", "Aspect-wise topic sentiment", "Random CV split", "≈90% accuracy", "No"],
+       ["BERT ABSA [12], [13]", "Aspect sentiment", "Trained on SemEval labels", "SemEval test", "Above ours", "No"],
+       ["Radview M2", "Aspect sentiment", "Weak labels from Yelp", "SemEval test", f"Macro-F1 {f3(db['macro_f1'])}", "—"],
+       ["Radview M4", "3-month decline", "Aspect complaint signals", "Chronological, purged",
+        f"AUROC {lr['auroc']:.3f}", "Verified"]],
+      [0.72, 0.52, 0.72, 0.6, 0.5, 0.38], size=6.5,
+      note="Results as reported by each work; the tasks differ, so the numbers are not directly comparable (see text).")
+para("Table XV places Radview next to the closest published methods. "
+     "Direct numerical comparison with [4] and [5] would be misleading: both predict permanent closure, an outcome "
      "with a much stronger and longer-lasting signal than a three-month rating decline, and [5] uses a random rather "
      "than chronological split, which can inflate results through temporal leakage [22]. Qualitatively, Radview adds what "
      "both papers leave as future work — aspect-level causes and recommendations — at the cost of a harder, noisier "
-     "target, and our AUROC of 0.73–0.74 on that target is consistent with the gap between the tasks. Operationally, "
-     "fine-tuning DistilBERT took 54 minutes and scoring all 152,649 reviews 52 minutes on CPU; training and evaluating "
-     "all seven forecasters takes under two minutes; a rule-based plan takes a quarter of a second and an "
-     "open-model plan about 15 s on a T4 GPU. The test-gated Docker image is "
+     f"target, and our AUROC of {lr['auroc']:.2f}–{rm4['rating_logreg']['auroc']:.2f} on that target is consistent "
+     f"with the gap between the tasks. Operationally, on one T4 GPU fine-tuning DistilBERT took about 5 minutes "
+     f"(about an hour on a laptop CPU) and scoring all 152,649 reviews about 14 minutes; training and evaluating all "
+     f"seven forecasters takes under a minute; a rule-based plan takes a tenth of a second and an open-model plan "
+     f"about {qo['median_latency_s']:.0f} s. The test-gated Docker image is "
      "3.6 GB; the full stack runs on the RONIN t3.large (8 GB) under k3s with about 1 GB of memory in use, and was "
-     "first sized on Docker Desktop's single-node cluster (6.8 GiB allocatable); the 27-test suite passes against "
+     "first sized on Docker Desktop's single-node cluster (6.8 GiB allocatable); the 43-test suite passes against "
      "the real outputs.")
 
 # =================================================================== V. CONCLUSION
 h1("Conclusions")
 para("Radview is an end-to-end, containerised system that turns raw restaurant reviews into aspect-level complaint "
      "signals, a calibrated decline forecast with two independent explanations, and a ranked action plan in which "
-     "every claim is mechanically verified. On real Yelp data its fine-tuned DistilBERT is the most accurate aspect "
-     "model that runs on a CPU, especially for detecting complaints, although a zero-shot open LLM is markedly more "
-     "accurate at about 127 times the cost per sentence; its agent produced 53 fully "
-     "grounded plans while rejecting every fabricated claim, and kept a free open model's unsupported claims "
-     "(31% of its drafts) away from owners; and its GRU is the best multi-signal forecaster. Our "
-     "main contributions are the aspect-to-action pipeline evaluated on real data, the five-axis verifier with an "
+     "every claim is mechanically verified. On real Yelp data its fine-tuned DistilBERT is the most accurate trained "
+     "aspect model, especially for detecting complaints, although a zero-shot open LLM is markedly more accurate at "
+     f"about {LLM_SLOWDOWN:.0f} times the cost per sentence; its verifier rejected every fabricated claim, including "
+     f"realistic ones built from real figures, and kept a free open model's unsupported claims "
+     f"({1 - qo['groundedness']:.0%} of its drafts) away from owners; and complaint spikes mark lasting damage. "
+     "Our main contributions are the aspect-to-action pipeline evaluated on real data, the five-axis verifier with an "
      "adversarial test, and a reproducible cloud-native deployment.")
-para("The evaluation also contradicted two of our expectations, and we consider reporting this part of the "
-     "contribution: a rating-trend logistic regression forecasts decline marginally better than any model that uses "
-     "aspect signals, and complaint spikes do not anticipate declines at monthly granularity. Open limitations are the "
-     "COVID-era test window; weak labels and an evaluation set without a cleanliness category; low review volumes that "
-     "make individual rates noisy; attributions and star costs that are associational rather than causal; a verifier "
-     "that checks traceability, not truth; and a small open LLM planner whose claims pass verification only "
-     "69% of the time. Future work: train DistilBERT on LLM labels instead of lexicon rules; redefine the spike target as lasting damage relative to the pre-spike baseline; hand-label "
-     "the exported 300-review Yelp sample; extend to several cities; compare a frontier LLM planner such as Claude with the open model, and collect owner "
-     "usefulness ratings, which the dashboard already records.")
+para("The evaluation also contradicted three of our expectations, and we consider reporting this part of the "
+     "contribution: a rating-trend logistic regression forecasts decline better than any model that uses aspect "
+     "signals; the multi-signal models' early warnings are barely better than random alerts; and complaint spikes do not "
+     "anticipate a further decline at monthly granularity. All three hold on a survivor-free selection of restaurants "
+     "and, for forecasting, on a pre-pandemic test window. Open limitations are the "
+     "COVID-era test window; weak labels that partly borrow the star rating and an evaluation set without a "
+     "cleanliness category; low review volumes that make individual rates noisy; attributions and star costs that are "
+     "associational rather than causal; a verifier that checks traceability, not truth; and a small open LLM planner "
+     f"whose claims pass verification only {qo['groundedness']:.0%} of the time. Future work: train DistilBERT on LLM "
+     "labels instead of lexicon rules; hand-label the exported 300-review Yelp sample; extend to several cities; "
+     "compare a frontier LLM planner such as Claude with the open model, and collect owner usefulness ratings, which "
+     "the dashboard already records.")
 
 # =================================================================== REFERENCES
 h1("References", numbered=False)

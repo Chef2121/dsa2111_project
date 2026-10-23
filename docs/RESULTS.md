@@ -12,60 +12,66 @@ Benchmark **semeval2014** – 800 labelled texts, aspects: food, service, price,
 
 | Model | Macro-F1 | Complaint-F1 | ms / text |
 |---|---|---|---|
-| lexicon_rule | 0.660 | 0.414 | 0.21 |
-| tfidf_logreg | 0.727 | 0.512 | 0.06 |
-| distilbert_finetuned | 0.737 | 0.567 | 6.49 |
-| zero_shot_llm (qwen2.5:7b, T4 GPU) | 0.842 | 0.748 | 822.44 |
+| lexicon_rule | 0.661 | 0.414 | 0.11 |
+| tfidf_logreg | 0.723 | 0.494 | 0.05 |
+| distilbert_finetuned | 0.750 | 0.580 | 1.05 |
+| zero_shot_llm | 0.842 | 0.748 | 886.0 |
 
-Selected for production: **distilbert_finetuned** (on semeval2014).
+Benchmark **semeval2014_dev** – 800 labelled texts, aspects: food, service, price, ambience
+
+| Model | Macro-F1 | Complaint-F1 | ms / text |
+|---|---|---|---|
+| lexicon_rule | 0.605 | 0.326 | 0.11 |
+| tfidf_logreg | 0.681 | 0.469 | 0.05 |
+| distilbert_finetuned | 0.711 | 0.543 | 1.06 |
+
+Selected for production: **distilbert_finetuned** (on semeval2014_dev).
 
 ### M3 – emerging complaint detection
 
 Base rate of a decline in the next 3 months: 5.8%
 
-| Detector | Flag rate | Precision | Lift | Decline onsets warned | Median lead (months) |
-|---|---|---|---|---|---|
-| complaint spike | 8.3% | 3.7% | 0.63 | 18.0% of 827 | 4.0 |
-| rating alarm | 4.5% | 1.9% | 0.32 | 6.4% of 827 | 5.0 |
+| Detector | Flag rate | Precision | Lift (random timing) | Decline onsets warned (random timing) | Lasting-drop lift (random timing) | Median lead (months) |
+|---|---|---|---|---|---|---|
+| complaint spike | 9.9% | 4.2% | 0.73 (1.13) | 22.3% of 794 (34.9%) | 1.35 (1.07) | 4.0 |
+| rating alarm | 0.9% | 1.5% | 0.25 (1.45) | 0.3% of 794 (5.7%) | 2.13 (1.15) | 5.5 |
+
+_Random timing: the same alerts moved to random months of the same restaurant. Lasting drop: the next 3 months are ≥0.3★ below the 6-month rating from before the alert._
 
 ### M4 – rating-decline forecasting (out-of-time test)
 
-Train 2016-01..2019-09 · validation 2019-10..2020-03 · test 2020-04..2021-09 — 4,214 test business-months, 7.0% positive.
+Train 2016-01..2019-06 · validation 2019-10..2019-12 · test 2020-04..2021-09 — 4,214 test business-months, 7.0% positive; 3 months purged before each boundary.
 
-| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Median lead |
-|---|---|---|---|---|---|---|---|
-| Majority (base rate) | 0.500 | 0.070 | 0.066 | 0.057 | 0.081 | –% | – mo |
-| Current negativity (no model) | 0.598 | 0.094 | 0.066 | 0.119 | 0.168 | 63% | 4 mo |
-| Rating trend · logistic regression | 0.738 | 0.205 | 0.061 | 0.237 | 0.337 | 65.5% | 3 mo |
-| Rating trend · LightGBM | 0.693 | 0.144 | 0.064 | 0.180 | 0.256 | 60% | 3 mo |
-| Rating + overall sentiment · LightGBM | 0.717 | 0.152 | 0.064 | 0.192 | 0.273 | 57.6% | 3 mo |
-| Radview features · LightGBM | 0.707 | 0.146 | 0.064 | 0.180 | 0.256 | 61.8% | 3 mo |
-| **Radview · PyTorch GRU (ensemble, calibrated)** | 0.727 | 0.171 | 0.063 | 0.207 | 0.293 | 55.2% | 3 mo |
+| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Random alerts warn | Median lead |
+|---|---|---|---|---|---|---|---|---|
+| Majority (base rate) | 0.500 | 0.070 | 0.066 | 0.057 | 0.081 | –% | –% | – mo |
+| Current negativity (no model) | 0.597 | 0.092 | 0.065 | 0.088 | 0.125 | 71% | 73.6% | 4 mo |
+| Rating trend · logistic regression | 0.734 | 0.201 | 0.062 | 0.235 | 0.333 | 65.8% | 53.5% | 3 mo |
+| Rating trend · LightGBM | 0.720 | 0.148 | 0.063 | 0.180 | 0.256 | 63.2% | 58.3% | 3 mo |
+| Rating + overall sentiment · LightGBM | 0.721 | 0.152 | 0.063 | 0.192 | 0.273 | 64.5% | 61.8% | 3 mo |
+| Radview features · LightGBM | 0.680 | 0.138 | 0.064 | 0.192 | 0.273 | 66.5% | 66.1% | 4 mo |
+| **Radview · PyTorch GRU (ensemble, calibrated)** | 0.708 | 0.161 | 0.063 | 0.188 | 0.266 | 55.5% | 54.4% | 2 mo |
 
-SHAP vs counterfactual — same top aspect: 64.0% of 397 restaurants (52.5% of 80 at-risk); mean Spearman 0.640.
-Star-impact coefficients (stars per unit complaint rate): food -1.53, service -1.32, cleanliness -1.09, price -0.32, ambience +0.37
+SHAP vs counterfactual — same top aspect: 48.9% of 397 restaurants (56.4% of 78 at-risk); mean Spearman 0.535.
+Star-impact coefficients (stars per unit complaint rate): food -1.74, service -1.46, cleanliness -0.47, price -0.23, ambience +0.00
 
-Top LightGBM features by mean |SHAP|: `rating_6m`, `rating_cum`, `low_star_share_3m`, `months_active`, `service_pos_rate_3m`, `review_velocity_ratio`, `ambience_pos_rate_3m`, `rating_1m`
+Top LightGBM features by mean |SHAP|: `rating_6m`, `rating_cum`, `checkins_3m`, `review_velocity_ratio`, `rating_slope_6m`, `low_star_share_3m`, `rating_3m_vs_prev6m`, `months_active`
 
 ### M5 – grounded action plans
 
-53 plans · 265/265 drafted claims verified (groundedness **100.0%**) · planners: {'rule_based': 53}
+62 plans · 296/296 drafted claims verified (groundedness **100.0%**) · planners: {'rule_based': 62}
 
 Planner comparison on the 20 riskiest restaurants:
 
 | Planner | Groundedness | Claims | Rejected: citation / quotation / relevance / statistic / substance | Items per plan | Median latency (s) | Tool calls |
 |---|---|---|---|---|---|---|
-| rule_based | 100.0% | 95 | 0 / 0 / 0 / 0 / 0 | 1.65 | 0.23 | 4.7 |
-| adversarial | 0.0% | 160 | 100 / 40 / 75 / 40 / 20 | 1 | 0.27 | 4.7 |
-| open_model | 68.8% | 48 | 8 / 8 / 0 / 1 / 6 | 1.1 | 14.52 | 9.8 |
-
-_open_model = Qwen 2.5 7B via Ollama on one NVIDIA T4 GPU (`RADVIEW_LLM_PROVIDER=open`); the Claude planner was not run (no API key). Details: [TEST_OUTPUTS.md §6.3](TEST_OUTPUTS.md)._
+| rule_based | 100.0% | 70 | 0 / 0 / 0 / 0 / 0 | 1.25 | 0.08499999999999999 | 4.3 |
+| adversarial | 0.0% | 246 | 106 / 60 / 84 / 106 / 20 | 1 | 0.15 | 4.3 |
+| open_model | 58.7% | 46 | 0 / 0 / 0 / 11 / 8 | 1.1 | 18.725 | 18.8 |
 
 ## Data source: `synthetic`
 
 _Simulator data: these numbers show the pipeline works end to end and test it against known, injected deterioration episodes. They are not evidence about real restaurants._
-
-220 restaurants · 84,838 reviews · 2019-01-01 → 2024-12-31 · mean rating 3.843
 
 ### M2 – aspect sentiment classification
 
@@ -73,17 +79,27 @@ Benchmark **in_domain** – 1000 labelled texts, aspects: food, service, cleanli
 
 | Model | Macro-F1 | Complaint-F1 | ms / text |
 |---|---|---|---|
-| lexicon_rule | 0.744 | 0.596 | 0.38 |
-| tfidf_logreg | 0.750 | 0.613 | 0.1 |
-| zero_shot_llm | – | – | skipped: ANTHROPIC_API_KEY not set |
+| lexicon_rule | 0.730 | 0.530 | 0.19 |
+| tfidf_logreg | 0.738 | 0.556 | 0.06 |
+| distilbert_finetuned | 0.729 | 0.529 | 1.65 |
+| zero_shot_llm | – | – | skipped: ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open) |
 
 Benchmark **semeval2014** – 800 labelled texts, aspects: food, service, price, ambience
 
 | Model | Macro-F1 | Complaint-F1 | ms / text |
 |---|---|---|---|
-| lexicon_rule | 0.660 | 0.413 | 0.16 |
-| tfidf_logreg | 0.490 | 0.221 | 0.08 |
-| zero_shot_llm | – | – | skipped: ANTHROPIC_API_KEY not set |
+| lexicon_rule | 0.661 | 0.414 | 0.13 |
+| tfidf_logreg | 0.494 | 0.193 | 0.04 |
+| distilbert_finetuned | 0.661 | 0.384 | 1.05 |
+| zero_shot_llm | – | – | skipped: ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open) |
+
+Benchmark **semeval2014_dev** – 800 labelled texts, aspects: food, service, price, ambience
+
+| Model | Macro-F1 | Complaint-F1 | ms / text |
+|---|---|---|---|
+| lexicon_rule | 0.605 | 0.326 | 0.11 |
+| tfidf_logreg | 0.504 | 0.253 | 0.04 |
+| distilbert_finetuned | 0.618 | 0.364 | 1.05 |
 
 Selected for production: **tfidf_logreg** (on in_domain).
 
@@ -91,50 +107,52 @@ Selected for production: **tfidf_logreg** (on in_domain).
 
 Base rate of a decline in the next 3 months: 8.3%
 
-| Detector | Flag rate | Precision | Lift | Decline onsets warned | Median lead (months) |
-|---|---|---|---|---|---|
-| complaint spike | 13.4% | 14.9% | 1.8 | 34.9% of 522 | 4.0 |
-| rating alarm | 4.3% | 29.5% | 3.55 | 6.9% of 522 | 4.5 |
+| Detector | Flag rate | Precision | Lift (random timing) | Decline onsets warned (random timing) | Lasting-drop lift (random timing) | Median lead (months) |
+|---|---|---|---|---|---|---|
+| complaint spike | 12.7% | 16.0% | 1.93 (1.17) | 35.5% of 516 (44.3%) | 1.93 (1.11) | 4.0 |
+| rating alarm | 2.7% | 38.9% | 4.69 (1.42) | 4.7% of 516 (9.9%) | 4.16 (1.28) | 3.5 |
+
+_Random timing: the same alerts moved to random months of the same restaurant. Lasting drop: the next 3 months are ≥0.3★ below the 6-month rating from before the alert._
 
 ### M4 – rating-decline forecasting (out-of-time test)
 
-Train 2019-01..2022-09 · validation 2022-10..2023-03 · test 2023-04..2024-09 — 3,935 test business-months, 9.6% positive.
+Train 2019-01..2022-06 · validation 2022-10..2022-12 · test 2023-04..2024-09 — 3,935 test business-months, 9.6% positive; 3 months purged before each boundary.
 
-| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Median lead |
-|---|---|---|---|---|---|---|---|
-| Majority (base rate) | 0.500 | 0.096 | 0.087 | 0.135 | 0.141 | –% | – mo |
-| Current negativity (no model) | 0.485 | 0.096 | 0.086 | 0.097 | 0.101 | 48.5% | 4 mo |
-| Rating trend · logistic regression | 0.639 | 0.146 | 0.085 | 0.178 | 0.186 | 34.4% | 3 mo |
-| Rating trend · LightGBM | 0.646 | 0.196 | 0.083 | 0.252 | 0.263 | 44.2% | 3.5 mo |
-| Rating + overall sentiment · LightGBM | 0.650 | 0.189 | 0.084 | 0.234 | 0.245 | 41.1% | 3 mo |
-| Radview features · LightGBM | 0.625 | 0.155 | 0.085 | 0.193 | 0.202 | 46.6% | 4 mo |
-| **Radview · PyTorch GRU (ensemble, calibrated)** | 0.637 | 0.189 | 0.084 | 0.252 | 0.263 | 31.9% | 4 mo |
+| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Random alerts warn | Median lead |
+|---|---|---|---|---|---|---|---|---|
+| Majority (base rate) | 0.500 | 0.096 | 0.087 | 0.135 | 0.141 | –% | –% | – mo |
+| Current negativity (no model) | 0.531 | 0.104 | 0.087 | 0.107 | 0.112 | 20.5% | 65.2% | 5 mo |
+| Rating trend · logistic regression | 0.626 | 0.138 | 0.085 | 0.171 | 0.178 | 34.8% | 57.3% | 3 mo |
+| Rating trend · LightGBM | 0.645 | 0.197 | 0.084 | 0.242 | 0.253 | 49.1% | 58% | 3 mo |
+| Rating + overall sentiment · LightGBM | 0.650 | 0.185 | 0.084 | 0.249 | 0.261 | 43.5% | 59.8% | 3 mo |
+| Radview features · LightGBM | 0.650 | 0.189 | 0.084 | 0.252 | 0.263 | 42.9% | 57.5% | 4 mo |
+| **Radview · PyTorch GRU (ensemble, calibrated)** | 0.646 | 0.206 | 0.083 | 0.239 | 0.250 | 28.6% | 57.4% | 3.5 mo |
 
 Injected deterioration episodes (synthetic ground truth):
 
 | Model | Episodes | Detected | Before visible drop | Median lead (months) |
 |---|---|---|---|---|
-| Current negativity (no model) | 67 | 28.4% | 25.4% | 2 |
-| Rating trend · logistic regression | 67 | 61.2% | 23.9% | 0 |
-| Rating trend · LightGBM | 67 | 67.2% | 14.9% | 0 |
-| Rating + overall sentiment · LightGBM | 67 | 68.7% | 13.4% | -0.5 |
-| Radview features · LightGBM | 67 | 68.7% | 17.9% | 0 |
-| **Radview · PyTorch GRU (ensemble, calibrated)** | 67 | 65.7% | 22.4% | 0 |
+| Current negativity (no model) | 67 | 47.8% | 4.5% | -1 |
+| Rating trend · logistic regression | 67 | 56.7% | 25.4% | 0 |
+| Rating trend · LightGBM | 67 | 65.7% | 13.4% | 0 |
+| Rating + overall sentiment · LightGBM | 67 | 71.6% | 19.4% | 0 |
+| Radview features · LightGBM | 67 | 83.6% | 23.9% | 0 |
+| **Radview · PyTorch GRU (ensemble, calibrated)** | 67 | 67.2% | 19.4% | 0 |
 
-SHAP vs counterfactual — same top aspect: 55.5% of 220 restaurants (54.8% of 42 at-risk); mean Spearman 0.604.
-Star-impact coefficients (stars per unit complaint rate): food -1.11, service -1.09, cleanliness -0.32, price -0.45, ambience -0.35
+SHAP vs counterfactual — same top aspect: 57.7% of 220 restaurants (62.5% of 32 at-risk); mean Spearman 0.610.
+Star-impact coefficients (stars per unit complaint rate): food -1.36, service -1.76, cleanliness -0.42, price -0.62, ambience -0.50
 
-Top LightGBM features by mean |SHAP|: `months_active`, `rating_slope_6m`, `rating_6m`, `cleanliness_z`, `service_z`, `rating_cum`, `rating_3m`, `service_neg_rate_change`
+Top LightGBM features by mean |SHAP|: `months_active`, `rating_6m`, `rating_slope_6m`, `cleanliness_z`, `rating_3m_vs_prev6m`, `rating_cum`, `rating_3m_vs_market`, `low_star_share_3m`
 
 ### M5 – grounded action plans
 
-42 plans · 503/503 drafted claims verified (groundedness **100.0%**) · planners: {'rule_based': 42}
+32 plans · 319/319 drafted claims verified (groundedness **100.0%**) · planners: {'rule_based': 32}
 
-Planner comparison on the 10 riskiest restaurants:
+Planner comparison on the 20 riskiest restaurants:
 
 | Planner | Groundedness | Claims | Rejected: citation / quotation / relevance / statistic / substance | Items per plan | Median latency (s) | Tool calls |
 |---|---|---|---|---|---|---|
-| rule_based | 100.0% | 108 | 0 / 0 / 0 / 0 / 0 | 2.4 | 0.14500000000000002 | 5.6 |
-| adversarial | 0.0% | 80 | 50 / 20 / 38 / 20 / 10 | 1 | 0.16 | 5.6 |
+| rule_based | 100.0% | 215 | 0 / 0 / 0 / 0 / 0 | 2.35 | 0.06 | 5.5 |
+| adversarial | 0.0% | 258 | 100 / 60 / 85 / 118 / 20 | 1 | 0.08 | 5.5 |
 
-_Claude planner not run: ANTHROPIC_API_KEY is not set._
+_LLM planner not run: set ANTHROPIC_API_KEY, or RADVIEW_LLM_PROVIDER=open with an Ollama server for the free open model._

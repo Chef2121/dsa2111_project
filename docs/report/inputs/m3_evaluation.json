@@ -1,19 +1,39 @@
 {
   "base_rate": 0.0583,
   "complaint_spike": {
-    "flag_rate": 0.0829,
-    "precision": 0.0366,
-    "lift": 0.63,
-    "onsets": 827,
-    "onsets_detected_pct": 18.0,
-    "median_lead_months": 4.0
+    "flag_rate": 0.0989,
+    "precision": 0.0424,
+    "lift": 0.73,
+    "onsets": 794,
+    "onsets_detected_pct": 22.3,
+    "median_lead_months": 4.0,
+    "lasting_drop": {
+      "base_rate": 0.2441,
+      "precision": 0.3306,
+      "lift": 1.35
+    },
+    "chance": {
+      "lift": 1.13,
+      "onsets_detected_pct": 34.9,
+      "lasting_drop_lift": 1.07
+    }
   },
   "rating_alarm": {
-    "flag_rate": 0.0449,
-    "precision": 0.0189,
-    "lift": 0.32,
-    "onsets": 827,
-    "onsets_detected_pct": 6.4,
-    "median_lead_months": 5.0
+    "flag_rate": 0.0092,
+    "precision": 0.0146,
+    "lift": 0.25,
+    "onsets": 794,
+    "onsets_detected_pct": 0.3,
+    "median_lead_months": 5.5,
+    "lasting_drop": {
+      "base_rate": 0.2441,
+      "precision": 0.5196,
+      "lift": 2.13
+    },
+    "chance": {
+      "lift": 1.45,
+      "onsets_detected_pct": 5.7,
+      "lasting_drop_lift": 1.15
+    }
   }
 }

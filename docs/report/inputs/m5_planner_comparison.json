@@ -5,8 +5,8 @@
       "actually_ran": [
         "rule_based"
       ],
-      "claims_total": 95,
-      "claims_verified": 95,
+      "claims_total": 70,
+      "claims_verified": 70,
       "groundedness": 1.0,
       "failures_by_axis": {
         "citation": 0,
@@ -15,9 +15,9 @@
         "statistic": 0,
         "substance": 0
       },
-      "mean_items_per_plan": 1.65,
-      "median_latency_s": 0.22999999999999998,
-      "mean_tool_calls": 4.7,
+      "mean_items_per_plan": 1.25,
+      "median_latency_s": 0.08499999999999999,
+      "mean_tool_calls": 4.3,
       "mean_tokens": null,
       "llm_model": null
     },
@@ -25,19 +25,19 @@
       "actually_ran": [
         "adversarial"
       ],
-      "claims_total": 160,
+      "claims_total": 246,
       "claims_verified": 0,
       "groundedness": 0.0,
       "failures_by_axis": {
-        "citation": 100,
-        "quotation": 40,
-        "relevance": 75,
-        "statistic": 40,
+        "citation": 106,
+        "quotation": 60,
+        "relevance": 84,
+        "statistic": 106,
         "substance": 20
       },
       "mean_items_per_plan": 1,
-      "median_latency_s": 0.27,
-      "mean_tool_calls": 4.7,
+      "median_latency_s": 0.15,
+      "mean_tool_calls": 4.3,
       "mean_tokens": null,
       "llm_model": null
     },
@@ -45,20 +45,20 @@
       "actually_ran": [
         "open_model"
       ],
-      "claims_total": 48,
-      "claims_verified": 33,
-      "groundedness": 0.6875,
+      "claims_total": 46,
+      "claims_verified": 27,
+      "groundedness": 0.587,
       "failures_by_axis": {
-        "citation": 8,
-        "quotation": 8,
+        "citation": 0,
+        "quotation": 0,
         "relevance": 0,
-        "statistic": 1,
-        "substance": 6
+        "statistic": 11,
+        "substance": 8
       },
       "mean_items_per_plan": 1.1,
-      "median_latency_s": 14.52,
-      "mean_tool_calls": 9.8,
-      "mean_tokens": 5980,
+      "median_latency_s": 18.725,
+      "mean_tool_calls": 18.8,
+      "mean_tokens": 5913,
       "llm_model": "qwen2.5:7b"
     }
   }

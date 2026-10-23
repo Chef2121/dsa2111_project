@@ -66,27 +66,34 @@ def section(src: str) -> list[str]:
     if m3:
         lines += ["### M3 – emerging complaint detection", "",
                   f"Base rate of a decline in the next 3 months: {m3['base_rate']:.1%}", "",
-                  "| Detector | Flag rate | Precision | Lift | Decline onsets warned | Median lead (months) |",
-                  "|---|---|---|---|---|---|"]
+                  "| Detector | Flag rate | Precision | Lift (random timing) | Decline onsets warned (random timing) "
+                  "| Lasting-drop lift (random timing) | Median lead (months) |",
+                  "|---|---|---|---|---|---|---|"]
         for k in ("complaint_spike", "rating_alarm"):
             r = m3[k]
-            lines.append(f"| {k.replace('_', ' ')} | {r['flag_rate']:.1%} | {r['precision']:.1%} | {r['lift']} | "
-                         f"{r['onsets_detected_pct']}% of {r['onsets']} | {r['median_lead_months']} |")
-        lines.append("")
+            ch, ld = r.get("chance") or {}, r.get("lasting_drop") or {}
+            lines.append(f"| {k.replace('_', ' ')} | {r['flag_rate']:.1%} | {r['precision']:.1%} | {r['lift']} "
+                         f"({_num(ch.get('lift'))}) | {r['onsets_detected_pct']}% of {r['onsets']} "
+                         f"({_num(ch.get('onsets_detected_pct'))}%) | {_num(ld.get('lift'))} "
+                         f"({_num(ch.get('lasting_drop_lift'))}) | {r['median_lead_months']} |")
+        lines += ["", "_Random timing: the same alerts moved to random months of the same restaurant. Lasting drop: "
+                  "the next 3 months are ≥0.3★ below the 6-month rating from before the alert._", ""]
 
     m4 = _load(src, "m4_evaluation.json")
     if m4:
         sp = m4["split"]
         lines += ["### M4 – rating-decline forecasting (out-of-time test)", "",
                   f"Train {sp['train']} · validation {sp['valid']} · test {sp['test']} — "
-                  f"{sp['n_test']:,} test business-months, {sp['pos_rate_test']:.1%} positive.", "",
-                  "| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) | Median lead |",
-                  "|---|---|---|---|---|---|---|---|"]
+                  f"{sp['n_test']:,} test business-months, {sp['pos_rate_test']:.1%} positive"
+                  + (f"; {sp['gap_months']} months purged before each boundary." if sp.get("gap_months") else "."), "",
+                  "| Model | AUROC | PR-AUC | Brier ↓ | Precision@10% | Recall@10% | Onsets warned (15% alert budget) "
+                  "| Random alerts warn | Median lead |",
+                  "|---|---|---|---|---|---|---|---|---|"]
         for k, r in m4["results"].items():
             ew = r.get("early_warning") or {}
             lines.append(f"| {MODEL_LABELS.get(k, k)} | {r['auroc']:.3f} | {r['pr_auc']:.3f} | {_fmt(r.get('brier'))} | "
                          f"{r['precision_at_10pct']:.3f} | {r['recall_at_10pct']:.3f} | {_num(ew.get('detected_pct'))}% | "
-                         f"{_num(ew.get('median_lead_months'))} mo |")
+                         f"{_num(ew.get('chance_detected_pct'))}% | {_num(ew.get('median_lead_months'))} mo |")
         if m4.get("injected_episodes"):
             lines += ["", "Injected deterioration episodes (synthetic ground truth):", "",
                       "| Model | Episodes | Detected | Before visible drop | Median lead (months) |", "|---|---|---|---|---|"]

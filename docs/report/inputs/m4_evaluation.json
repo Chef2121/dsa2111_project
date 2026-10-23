@@ -1,12 +1,14 @@
 {
   "split": {
-    "train": "2016-01..2019-09",
-    "valid": "2019-10..2020-03",
+    "train": "2016-01..2019-06",
+    "valid": "2019-10..2019-12",
     "test": "2020-04..2021-09",
-    "n_train": 16442,
-    "n_valid": 1761,
+    "gap_months": 3,
+    "n_train": 15360,
+    "n_valid": 1045,
     "n_test": 4214,
-    "pos_rate_train": 0.0563,
+    "pos_rate_train": 0.0559,
+    "pos_rate_valid": 0.0584,
     "pos_rate_test": 0.0705
   },
   "results": {
@@ -19,291 +21,258 @@
       "early_warning": null
     },
     "current_negativity": {
-      "auroc": 0.5984,
-      "pr_auc": 0.0941,
-      "brier": 0.0655,
-      "precision_at_10pct": 0.1188,
-      "recall_at_10pct": 0.1684,
+      "auroc": 0.5972,
+      "pr_auc": 0.0921,
+      "brier": 0.0652,
+      "precision_at_10pct": 0.0879,
+      "recall_at_10pct": 0.1246,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 63.0,
+        "onsets": 155,
+        "detected_pct": 71.0,
+        "chance_detected_pct": 73.6,
         "median_lead_months": 4.0,
-        "mean_lead_months": 3.78
+        "mean_lead_months": 3.84
       }
     },
     "rating_logreg": {
-      "auroc": 0.7382,
-      "pr_auc": 0.205,
-      "brier": 0.0615,
-      "precision_at_10pct": 0.2375,
-      "recall_at_10pct": 0.3367,
+      "auroc": 0.7336,
+      "pr_auc": 0.2006,
+      "brier": 0.0621,
+      "precision_at_10pct": 0.2352,
+      "recall_at_10pct": 0.3333,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 65.5,
+        "onsets": 155,
+        "detected_pct": 65.8,
+        "chance_detected_pct": 53.5,
         "median_lead_months": 3.0,
-        "mean_lead_months": 3.23
+        "mean_lead_months": 3.4
       }
     },
     "rating_lgbm": {
-      "auroc": 0.6931,
-      "pr_auc": 0.1442,
-      "brier": 0.0641,
+      "auroc": 0.7204,
+      "pr_auc": 0.1476,
+      "brier": 0.0628,
       "precision_at_10pct": 0.1805,
       "recall_at_10pct": 0.2559,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 60.0,
+        "onsets": 155,
+        "detected_pct": 63.2,
+        "chance_detected_pct": 58.3,
         "median_lead_months": 3.0,
-        "mean_lead_months": 3.31
+        "mean_lead_months": 3.57
       }
     },
     "sentiment_lgbm": {
-      "auroc": 0.7174,
-      "pr_auc": 0.1525,
-      "brier": 0.0635,
+      "auroc": 0.7213,
+      "pr_auc": 0.1516,
+      "brier": 0.0626,
       "precision_at_10pct": 0.1924,
       "recall_at_10pct": 0.2727,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 57.6,
+        "onsets": 155,
+        "detected_pct": 64.5,
+        "chance_detected_pct": 61.8,
         "median_lead_months": 3.0,
-        "mean_lead_months": 3.46
+        "mean_lead_months": 3.51
       }
     },
     "radview_lgbm": {
-      "auroc": 0.7068,
-      "pr_auc": 0.1456,
-      "brier": 0.0641,
-      "precision_at_10pct": 0.1805,
-      "recall_at_10pct": 0.2559,
+      "auroc": 0.6802,
+      "pr_auc": 0.1384,
+      "brier": 0.0638,
+      "precision_at_10pct": 0.1924,
+      "recall_at_10pct": 0.2727,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 61.8,
-        "median_lead_months": 3.0,
-        "mean_lead_months": 3.47
+        "onsets": 155,
+        "detected_pct": 66.5,
+        "chance_detected_pct": 66.1,
+        "median_lead_months": 4.0,
+        "mean_lead_months": 3.8
       }
     },
     "radview_gru": {
-      "auroc": 0.7269,
-      "pr_auc": 0.1713,
-      "brier": 0.0632,
-      "precision_at_10pct": 0.2067,
-      "recall_at_10pct": 0.2929,
+      "auroc": 0.7083,
+      "pr_auc": 0.1607,
+      "brier": 0.0627,
+      "precision_at_10pct": 0.1876,
+      "recall_at_10pct": 0.266,
       "early_warning": {
-        "onsets": 165,
-        "detected_pct": 55.2,
-        "median_lead_months": 3.0,
-        "mean_lead_months": 3.18
+        "onsets": 155,
+        "detected_pct": 55.5,
+        "chance_detected_pct": 54.4,
+        "median_lead_months": 2.0,
+        "mean_lead_months": 3.15
       }
     }
   },
   "injected_episodes": null,
   "gru_training": [
     {
-      "best_valid_pr_auc": 0.1085,
+      "best_valid_pr_auc": 0.1384,
       "history": [
         {
           "epoch": 1,
-          "train_loss": 1.2167,
-          "valid_pr_auc": 0.0928
+          "train_loss": 1.2151,
+          "valid_pr_auc": 0.1234
         },
         {
           "epoch": 2,
-          "train_loss": 1.1404,
-          "valid_pr_auc": 0.0936
+          "train_loss": 1.1519,
+          "valid_pr_auc": 0.1384
         },
         {
           "epoch": 3,
-          "train_loss": 1.1085,
-          "valid_pr_auc": 0.1004
+          "train_loss": 1.1274,
+          "valid_pr_auc": 0.1179
         },
         {
           "epoch": 4,
-          "train_loss": 1.0919,
-          "valid_pr_auc": 0.1015
+          "train_loss": 1.0861,
+          "valid_pr_auc": 0.1095
         },
         {
           "epoch": 5,
-          "train_loss": 1.0635,
-          "valid_pr_auc": 0.09
+          "train_loss": 1.0623,
+          "valid_pr_auc": 0.1119
         },
         {
           "epoch": 6,
-          "train_loss": 1.0164,
-          "valid_pr_auc": 0.1063
+          "train_loss": 1.0433,
+          "valid_pr_auc": 0.1209
         },
         {
           "epoch": 7,
-          "train_loss": 1.0104,
-          "valid_pr_auc": 0.1085
-        },
-        {
-          "epoch": 8,
-          "train_loss": 0.9749,
-          "valid_pr_auc": 0.1044
-        },
-        {
-          "epoch": 9,
-          "train_loss": 0.942,
-          "valid_pr_auc": 0.0862
-        },
-        {
-          "epoch": 10,
-          "train_loss": 0.9106,
-          "valid_pr_auc": 0.0846
-        },
-        {
-          "epoch": 11,
-          "train_loss": 0.8746,
-          "valid_pr_auc": 0.0795
-        },
-        {
-          "epoch": 12,
-          "train_loss": 0.8516,
-          "valid_pr_auc": 0.0897
+          "train_loss": 0.9972,
+          "valid_pr_auc": 0.1262
         }
       ]
     },
     {
-      "best_valid_pr_auc": 0.1007,
+      "best_valid_pr_auc": 0.1463,
       "history": [
         {
           "epoch": 1,
-          "train_loss": 1.2148,
-          "valid_pr_auc": 0.0802
+          "train_loss": 1.2258,
+          "valid_pr_auc": 0.1305
         },
         {
           "epoch": 2,
-          "train_loss": 1.1436,
-          "valid_pr_auc": 0.0866
+          "train_loss": 1.152,
+          "valid_pr_auc": 0.1463
         },
         {
           "epoch": 3,
-          "train_loss": 1.1077,
-          "valid_pr_auc": 0.0759
+          "train_loss": 1.1213,
+          "valid_pr_auc": 0.1361
         },
         {
           "epoch": 4,
-          "train_loss": 1.0875,
-          "valid_pr_auc": 0.0831
+          "train_loss": 1.0936,
+          "valid_pr_auc": 0.1407
         },
         {
           "epoch": 5,
-          "train_loss": 1.0406,
-          "valid_pr_auc": 0.0846
+          "train_loss": 1.0652,
+          "valid_pr_auc": 0.1178
         },
         {
           "epoch": 6,
-          "train_loss": 1.0166,
-          "valid_pr_auc": 0.0876
+          "train_loss": 1.0411,
+          "valid_pr_auc": 0.1055
         },
         {
           "epoch": 7,
-          "train_loss": 0.9894,
-          "valid_pr_auc": 0.1007
-        },
-        {
-          "epoch": 8,
-          "train_loss": 0.9689,
-          "valid_pr_auc": 0.0856
-        },
-        {
-          "epoch": 9,
-          "train_loss": 0.9308,
-          "valid_pr_auc": 0.0893
-        },
-        {
-          "epoch": 10,
-          "train_loss": 0.892,
-          "valid_pr_auc": 0.0937
-        },
-        {
-          "epoch": 11,
-          "train_loss": 0.8657,
-          "valid_pr_auc": 0.0759
-        },
-        {
-          "epoch": 12,
-          "train_loss": 0.8206,
-          "valid_pr_auc": 0.0949
+          "train_loss": 0.9961,
+          "valid_pr_auc": 0.1097
         }
       ]
     },
     {
-      "best_valid_pr_auc": 0.106,
+      "best_valid_pr_auc": 0.1484,
       "history": [
         {
           "epoch": 1,
-          "train_loss": 1.2123,
-          "valid_pr_auc": 0.106
+          "train_loss": 1.2204,
+          "valid_pr_auc": 0.1405
         },
         {
           "epoch": 2,
-          "train_loss": 1.151,
-          "valid_pr_auc": 0.0924
+          "train_loss": 1.1387,
+          "valid_pr_auc": 0.1339
         },
         {
           "epoch": 3,
-          "train_loss": 1.0978,
-          "valid_pr_auc": 0.1048
+          "train_loss": 1.1044,
+          "valid_pr_auc": 0.1484
         },
         {
           "epoch": 4,
-          "train_loss": 1.0785,
-          "valid_pr_auc": 0.0926
+          "train_loss": 1.0849,
+          "valid_pr_auc": 0.1275
         },
         {
           "epoch": 5,
-          "train_loss": 1.0626,
-          "valid_pr_auc": 0.0875
+          "train_loss": 1.0553,
+          "valid_pr_auc": 0.1262
         },
         {
           "epoch": 6,
-          "train_loss": 1.0304,
-          "valid_pr_auc": 0.0907
+          "train_loss": 1.0356,
+          "valid_pr_auc": 0.1277
+        },
+        {
+          "epoch": 7,
+          "train_loss": 1.0048,
+          "valid_pr_auc": 0.1083
+        },
+        {
+          "epoch": 8,
+          "train_loss": 0.9823,
+          "valid_pr_auc": 0.1382
         }
       ]
     }
   ],
   "calibration": [
-    0.44687210722533355,
-    -2.8975919943714885
+    0.8465260285782579,
+    -2.5791668098044025
   ],
   "primary_model": "radview_gru",
   "lgbm_top_features_shap": {
-    "rating_6m": 0.094,
-    "rating_cum": 0.0495,
-    "low_star_share_3m": 0.0247,
-    "months_active": 0.0183,
-    "service_pos_rate_3m": 0.0101,
-    "review_velocity_ratio": 0.0081,
-    "ambience_pos_rate_3m": 0.0081,
-    "rating_1m": 0.0073,
-    "rating_slope_6m": 0.0058,
-    "price_z": 0.0054,
-    "checkin_ratio": 0.0042,
-    "tips_3m": 0.0041,
-    "food_z": 0.0037,
-    "ambience_z": 0.0035,
-    "rating_3m_vs_prev6m": 0.0035
+    "rating_6m": 0.0772,
+    "rating_cum": 0.0455,
+    "checkins_3m": 0.0216,
+    "review_velocity_ratio": 0.0177,
+    "rating_slope_6m": 0.0177,
+    "low_star_share_3m": 0.0174,
+    "rating_3m_vs_prev6m": 0.017,
+    "months_active": 0.0117,
+    "cleanliness_z": 0.0108,
+    "checkin_ratio": 0.0081,
+    "service_z": 0.0059,
+    "food_z": 0.0039,
+    "cleanliness_neg_rate_change": 0.003,
+    "price_neg_rate_change": 0.0026,
+    "service_neg_rate_vs_market": 0.0025
   },
   "attribution_agreement": {
     "at_risk": {
-      "n": 80,
-      "top_aspect_agreement": 0.525,
-      "mean_spearman": 0.466
+      "n": 78,
+      "top_aspect_agreement": 0.5641,
+      "mean_spearman": 0.5817
     },
     "all": {
       "n": 397,
-      "top_aspect_agreement": 0.6398,
-      "mean_spearman": 0.6397
+      "top_aspect_agreement": 0.4887,
+      "mean_spearman": 0.5351
     },
     "star_impact_coefficients": {
-      "food": -1.527,
-      "service": -1.3213,
-      "cleanliness": -1.0866,
-      "price": -0.3167,
-      "ambience": 0.3746
-    }
+      "food": -1.7369,
+      "service": -1.4621,
+      "cleanliness": -0.47,
+      "price": -0.2253,
+      "ambience": 0.0
+    },
+    "typical_risk": 0.0542
   }
 }
