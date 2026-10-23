@@ -1,35 +1,44 @@
 {
   "selected_model": "distilbert_finetuned",
-  "selected_on": "semeval2014",
+  "selected_on": "semeval2014_dev",
   "weak_label_distribution": {
     "food": [
-      5830,
-      26466,
-      7704
+      6865,
+      27795,
+      5340
     ],
     "service": [
-      17072,
-      17439,
-      5489
+      18418,
+      17382,
+      4200
     ],
     "cleanliness": [
-      37393,
-      1586,
-      1021
+      37492,
+      1600,
+      908
     ],
     "price": [
-      29010,
-      7403,
-      3587
+      29885,
+      7258,
+      2857
     ],
     "ambience": [
-      28636,
-      9181,
-      2183
+      29215,
+      9304,
+      1481
     ]
   },
   "benchmarks": {
     "semeval2014": {
+      "n": 800,
+      "aspects": [
+        "food",
+        "service",
+        "price",
+        "ambience"
+      ]
+    },
+    "semeval2014_dev": {
       "n": 800,
       "aspects": [
         "food",
@@ -44,12 +53,12 @@
       {
         "model": "lexicon_rule",
         "n_test": 800,
-        "macro_f1": 0.6603,
+        "macro_f1": 0.6614,
         "complaint_f1": 0.4141,
         "macro_f1_per_aspect": {
           "food": 0.5985,
-          "service": 0.7529,
-          "price": 0.7161,
+          "service": 0.7546,
+          "price": 0.7188,
           "ambience": 0.5736
         },
         "complaint_f1_per_aspect": {
@@ -58,46 +67,46 @@
           "price": 0.5333,
           "ambience": 0.2439
         },
-        "inference_ms_per_review": 0.21
+        "inference_ms_per_review": 0.11
       },
       {
         "model": "tfidf_logreg",
         "n_test": 800,
-        "macro_f1": 0.7273,
-        "complaint_f1": 0.5124,
+        "macro_f1": 0.7226,
+        "complaint_f1": 0.4942,
         "macro_f1_per_aspect": {
-          "food": 0.7002,
-          "service": 0.8313,
-          "price": 0.7734,
-          "ambience": 0.6045
+          "food": 0.6832,
+          "service": 0.8359,
+          "price": 0.7574,
+          "ambience": 0.6139
         },
         "complaint_f1_per_aspect": {
-          "food": 0.5202,
-          "service": 0.6891,
-          "price": 0.6129,
-          "ambience": 0.2273
+          "food": 0.4868,
+          "service": 0.6847,
+          "price": 0.5614,
+          "ambience": 0.2439
         },
-        "inference_ms_per_review": 0.06
+        "inference_ms_per_review": 0.05
       },
       {
         "model": "distilbert_finetuned",
         "n_test": 800,
-        "macro_f1": 0.7369,
-        "complaint_f1": 0.5674,
+        "macro_f1": 0.7496,
+        "complaint_f1": 0.5796,
         "macro_f1_per_aspect": {
-          "food": 0.6988,
-          "service": 0.8642,
-          "price": 0.7483,
-          "ambience": 0.6365
+          "food": 0.6777,
+          "service": 0.8589,
+          "price": 0.783,
+          "ambience": 0.679
         },
         "complaint_f1_per_aspect": {
-          "food": 0.5578,
-          "service": 0.746,
-          "price": 0.6182,
-          "ambience": 0.3478
+          "food": 0.4697,
+          "service": 0.7213,
+          "price": 0.6875,
+          "ambience": 0.44
         },
-        "inference_ms_per_review": 6.49,
-        "train_seconds": 3260.7,
+        "inference_ms_per_review": 1.05,
+        "train_seconds": 327.2,
         "train_size": 6000
       },
       {
@@ -117,10 +126,71 @@
           "price": 0.8116,
           "ambience": 0.5091
         },
-        "inference_ms_per_review": 822.44,
+        "inference_ms_per_review": 886.0,
         "llm_provider": "open",
         "llm_model": "qwen2.5:7b",
         "parse_failures": 0
+      }
+    ],
+    "semeval2014_dev": [
+      {
+        "model": "lexicon_rule",
+        "n_test": 800,
+        "macro_f1": 0.6047,
+        "complaint_f1": 0.3264,
+        "macro_f1_per_aspect": {
+          "food": 0.5962,
+          "service": 0.6226,
+          "price": 0.6508,
+          "ambience": 0.5492
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.3883,
+          "service": 0.3261,
+          "price": 0.383,
+          "ambience": 0.2083
+        },
+        "inference_ms_per_review": 0.11
+      },
+      {
+        "model": "tfidf_logreg",
+        "n_test": 800,
+        "macro_f1": 0.6809,
+        "complaint_f1": 0.4685,
+        "macro_f1_per_aspect": {
+          "food": 0.6681,
+          "service": 0.7095,
+          "price": 0.7296,
+          "ambience": 0.6162
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5075,
+          "service": 0.4815,
+          "price": 0.5714,
+          "ambience": 0.3137
+        },
+        "inference_ms_per_review": 0.05
+      },
+      {
+        "model": "distilbert_finetuned",
+        "n_test": 800,
+        "macro_f1": 0.7108,
+        "complaint_f1": 0.5431,
+        "macro_f1_per_aspect": {
+          "food": 0.6663,
+          "service": 0.7586,
+          "price": 0.7563,
+          "ambience": 0.6619
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.4576,
+          "service": 0.5891,
+          "price": 0.6849,
+          "ambience": 0.4407
+        },
+        "inference_ms_per_review": 1.06,
+        "train_seconds": 327.2,
+        "train_size": 6000
       }
     ]
   }

@@ -1,8 +1,9 @@
 """Figures for the Group 10 report.
 
 Fig. 1 architecture and Fig. 2 agent workflow are drawn here; Fig. 3 (dashboard) is composed from the two
-screenshots in figs/src; Fig. 4 (M2 per-aspect F1) and Fig. 5 (M4 precision-recall) are computed from the
-result snapshots in docs/report/inputs. Run:  python docs/report/make_figures.py
+screenshots in figs/src; Fig. 4 (M2 per-aspect F1), Fig. 5 (M3 lift vs. chance, both restaurant selections) and
+Fig. 6 (M4 precision-recall) are computed from the result snapshots in docs/report/inputs (file names follow the
+order the figures were added, not their number in the report). Run:  python docs/report/make_figures.py
 """
 import json
 from pathlib import Path
@@ -118,6 +119,46 @@ ax.axhline(tp["decline"].mean(), color="#52514e", lw=0.7, ls=":", label=f"Base r
 ax.set_xlabel("Recall"); ax.set_ylabel("Precision"); ax.set_xlim(0, 1); ax.set_ylim(0, 0.6)
 ax.grid(color="#e6e5e0", lw=0.5); ax.legend(frameon=False, fontsize=6)
 fig.savefig(OUT / "fig4_m4_pr.png"); plt.close(fig)
+
+# ---------------------------------------------------------------- Fig 6 (report Fig. 5): M3 lift vs. chance
+samples = {"Lifetime top 400": "m3_evaluation.json", "2016 top 400": "robust_select2016_m3_evaluation.json"}
+targets = [("Decline in the next 3 months", "lift", "lift"),
+           ("Lasting drop (vs. pre-alert rating)", "lasting", "lasting_drop_lift")]
+fig, axes = plt.subplots(1, 2, figsize=(3.45, 1.75), sharey=True)
+w = 0.2
+for ax, (title, kind, chance_key) in zip(axes, targets):
+    for s, (sample, fname) in enumerate(samples.items()):
+        path = YELP / fname
+        if not path.exists():
+            continue
+        m3 = json.loads(path.read_text())
+        for d, det in enumerate(["complaint_spike", "rating_alarm"]):
+            r = m3[det]
+            obs = r["lasting_drop"]["lift"] if kind == "lasting" else r["lift"]
+            x = d + (s - 0.5) * 2 * w
+            ax.bar(x - w / 2, obs, w, color=SER[s], edgecolor="white", lw=0.5,
+                   label=f"{sample}: observed" if d == 0 and kind == "lift" else None)
+            ax.bar(x + w / 2, r["chance"][chance_key], w, color=SER[s], alpha=0.35, edgecolor="white", lw=0.5,
+                   label=f"{sample}: random timing" if d == 0 and kind == "lift" else None)
+    ax.axhline(1, color="#52514e", lw=0.7, ls=":")
+    ax.set_xticks([0, 1]); ax.set_xticklabels(["Complaint spike", "Rating alarm"]); ax.set_title(title)
+    ax.grid(axis="y", color="#e6e5e0", lw=0.5); ax.set_axisbelow(True)
+axes[0].set_ylabel("Lift over base rate")
+axes[0].legend(loc="upper center", bbox_to_anchor=(1.05, 1.5), ncol=2, frameon=False)
+fig.savefig(OUT / "fig6_m3_lift.png"); plt.close(fig)
+
+# ---------------------------------------------------------------- Fig 7 (report Fig. 7): M4 calibration by risk decile
+fig, ax = plt.subplots(figsize=(3.45, 2.1))
+for i, (k, lab) in enumerate((("rating_logreg", "Rating trend · LogReg"), ("radview_gru", "All features · GRU (ours)"))):
+    dec = pd.qcut(tp[k].rank(method="first"), 10, labels=False)
+    g = tp.groupby(dec).agg(pred=(k, "mean"), obs=("decline", "mean"))
+    ax.plot(g["pred"], g["obs"], marker="o", ms=3, lw=1.2, color=SER[[0, 4][i]], label=lab)
+top = max(tp[["rating_logreg", "radview_gru"]].max().max(), 0.3)
+ax.plot([0, 0.32], [0, 0.32], color="#52514e", lw=0.7, ls=":", label="Perfect calibration")
+ax.set_xlim(0, 0.32); ax.set_ylim(0, 0.32)
+ax.set_xlabel("Mean predicted risk (test-set decile)"); ax.set_ylabel("Observed decline rate")
+ax.grid(color="#e6e5e0", lw=0.5); ax.legend(frameon=False, fontsize=6, loc="upper left")
+fig.savefig(OUT / "fig7_m4_calibration.png"); plt.close(fig)
 # ---------------------------------------------------------------- Fig 5 (report Fig. 3): dashboard screenshot
 from PIL import Image
 

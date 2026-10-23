@@ -23,11 +23,12 @@ class ReviewBatch(BaseModel):
 class Feedback(BaseModel):
     business_id: str
     usefulness: int = Field(ge=1, le=5, description="How useful was the action plan? 1-5")
-    comment: str = ""
-    aspect: str | None = None
+    comment: str = Field("", max_length=1000)
+    aspect: str | None = Field(None, pattern="^(" + "|".join(ASPECTS) + ")$")
 
 
 def _known(business_id: str) -> None:
+    service.STORE.refresh_if_changed()
     if business_id not in service.STORE.businesses.index:
         raise HTTPException(404, f"unknown business_id {business_id}")
 
@@ -70,7 +71,8 @@ def reviews(business_id: str, aspect: str | None = None, sentiment: str | None =
 
 @app.get("/restaurants/{business_id}/plan")
 def plan(business_id: str, refresh: bool = False, llm: bool | None = None):
-    """Evidence-backed action plan (cached; ``refresh=true`` re-runs the agent)."""
+    """Evidence-backed action plan (cached; ``refresh=true`` re-runs the agent). Runs triggered here use the
+    rule-based planner unless the server sets RADVIEW_ALLOW_LLM_REFRESH=1 (LLM calls cost money)."""
     _known(business_id)
     return service.plan(business_id, refresh=refresh, use_llm=llm)
 

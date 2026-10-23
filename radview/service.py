@@ -6,6 +6,7 @@ returned directly by FastAPI or consumed by Streamlit in-process.
 from __future__ import annotations
 
 import csv
+import functools
 import json
 import math
 from datetime import datetime
@@ -13,11 +14,20 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from radview.config import ASPECTS, LABEL_NEG, LABEL_POS, OUTPUTS_DIR, SOURCE
+from radview.config import ALLOW_LLM_REFRESH, ASPECTS, LABEL_NEG, LABEL_POS, OUTPUTS_DIR, SOURCE
 from radview.m5_agent.agent import PLANS_DIR, generate_plan
 from radview.m5_agent.tools import STORE, compare_peers, query_metrics, run_forecast
 
 FEEDBACK_FILE = OUTPUTS_DIR / "feedback.csv"
+
+
+def fresh(fn):
+    """Reload the cached pipeline outputs first if a newer pipeline run has finished."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        STORE.refresh_if_changed()
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 def _clean(obj):
@@ -33,6 +43,7 @@ def _clean(obj):
     return obj
 
 
+@fresh
 def meta() -> dict:
     run = OUTPUTS_DIR / "pipeline_run.json"
     return _clean({"source": SOURCE, "latest_month": STORE.latest_month, "restaurants": int(len(STORE.businesses)),
@@ -40,6 +51,7 @@ def meta() -> dict:
                    "pipeline_run": json.loads(run.read_text()) if run.exists() else None})
 
 
+@fresh
 def list_restaurants(active_only: bool = True) -> list[dict]:
     latest = STORE.risk_latest.reset_index()
     feat = STORE.features[STORE.features["month"] == STORE.latest_month].set_index("business_id")
@@ -57,6 +69,7 @@ def list_restaurants(active_only: bool = True) -> list[dict]:
     return _clean(df[cols].to_dict(orient="records"))
 
 
+@fresh
 def restaurant(business_id: str) -> dict:
     biz = STORE.businesses.loc[business_id]
     info = {k: biz[k] for k in ("name", "address", "city", "state", "cuisine", "categories", "yelp_stars",
@@ -65,6 +78,7 @@ def restaurant(business_id: str) -> dict:
                    "forecast": run_forecast(business_id), "peers": compare_peers(business_id)})
 
 
+@fresh
 def timeline(business_id: str) -> list[dict]:
     p = STORE.panel[STORE.panel["business_id"] == business_id][["month", "n_reviews", "mean_stars", "checkins"]]
     t = STORE.trends[STORE.trends["business_id"] == business_id]
@@ -76,6 +90,7 @@ def timeline(business_id: str) -> list[dict]:
     return _clean(df.to_dict(orient="records"))
 
 
+@fresh
 def reviews(business_id: str, aspect: str | None = None, sentiment: str | None = None, limit: int = 50) -> list[dict]:
     rev = STORE.business_reviews(business_id).sort_values("date", ascending=False)
     if aspect:
@@ -88,10 +103,13 @@ def reviews(business_id: str, aspect: str | None = None, sentiment: str | None =
     return out
 
 
+@fresh
 def plan(business_id: str, refresh: bool = False, use_llm: bool | None = None) -> dict:
     path = PLANS_DIR / f"{business_id}.json"
     if path.exists() and not refresh:
         return json.loads(path.read_text())
+    if not ALLOW_LLM_REFRESH:  # a request must not be able to trigger paid LLM calls unless explicitly allowed
+        use_llm = False
     return _clean(generate_plan(business_id, use_llm=use_llm))
 
 
@@ -146,6 +164,7 @@ def feedback_summary() -> dict:
     return {"n": int(len(fb)), "mean_usefulness": round(float(fb["usefulness"].mean()), 2) if len(fb) else None}
 
 
+@fresh
 def alerts(min_z: float = 0.0) -> list[dict]:
     """Live complaint-spike alerts (M3) for the latest month, most severe first."""
     t = STORE.trends[STORE.trends["month"] == STORE.latest_month].set_index("business_id")
@@ -165,6 +184,7 @@ def alerts(min_z: float = 0.0) -> list[dict]:
     return _clean(sorted(out, key=lambda r: -r["robust_z"]))
 
 
+@fresh
 def analyse(texts: list[str]) -> list[dict]:
     """Score raw review texts on the fly with the production M2 model (e.g. reviews not yet ingested).
 

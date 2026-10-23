@@ -13,6 +13,16 @@ each of which the verifier must reject:
     7. states a star figure no tool returned                      -> statistic
     8. makes a "metric" claim with no checkable figure            -> substance
 
+and, because blatant fakes alone are a weak test, the subtler mistakes a real
+LLM planner makes - each uses a figure or review the tools really returned:
+
+    9.  states the market median as the restaurant's own rate     -> statistic
+    10. states the decline risk as a complaint rate               -> statistic
+    11. states the current rating as a star cost                  -> statistic
+    12. cites a real retrieved review with an empty quote and
+        invented content                                          -> quotation
+    13. adds an uncheckable multiplier ("tripled") to a real quote -> statistic
+
 Run through the full agent graph, its plans must score groundedness 0.
 """
 from __future__ import annotations
@@ -54,7 +64,31 @@ class HallucinatingPlanner:
             sentence = r["text"].split(".")[0]
             claims.append({"type": "review", "text": f"A guest complained: \"{sentence}\"",
                            "review_ids": [r["review_id"]], "quote": sentence})
+        claims += self._subtle_claims(state, aspect, any_mine)
         plan = {"summary": "Fabricated plan used to test the verifier.",
                 "items": [{"aspect": aspect, "headline": "Invented problem", "claims": claims,
                            "actions": ["Do something drastic."]}]}
         return plan, {}
+
+    @staticmethod
+    def _subtle_claims(state, aspect: str, any_mine) -> list[dict]:
+        """Real figures attached to the wrong quantity, and real citations carrying invented content."""
+        m = state["metrics"]["aspects"][aspect]
+        own, market = m["complaint_rate_3m"], m.get("market_median_rate")
+        risk, rating = state["forecast"]["risk"], state["metrics"].get("rating_3m")
+        out = []
+        if market is not None and abs(market - own) > 0.03:          # otherwise the figure would be right
+            out.append({"type": "metric", "text": f"{market:.0%} of your reviews complain about {aspect}."})
+        if abs(risk - own) > 0.03:
+            out.append({"type": "metric", "text": f"{risk:.0%} of your reviews complain about {aspect}."})
+        if rating is not None:
+            out.append({"type": "metric", "text": f"{aspect.capitalize()} problems are costing you {rating:.2f} stars."})
+        retrieved = state.get("retrieved_ids") or [any_mine["review_id"]]
+        out.append({"type": "review", "text": "A guest found a cockroach in their soup and got food poisoning.",
+                    "review_ids": [retrieved[0]], "quote": ""})
+        evidence = state.get("evidence", {}).get(aspect) or []
+        if evidence:
+            e = evidence[0]
+            out.append({"type": "review", "text": f"{aspect.capitalize()} complaints have tripled: \"{e['quote']}\"",
+                        "review_ids": [e["review_id"]], "quote": e["quote"]})
+        return out

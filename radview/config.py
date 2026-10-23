@@ -32,6 +32,7 @@ MODELS_DIR = WORK_DIR / "models"        # trained M2 / M4 artefacts
 OUTPUTS_DIR = WORK_DIR / "outputs"      # scores, plans, evaluation reports
 LABELS_DIR = DATA_DIR / "labels" / SOURCE  # hand-labelled aspect test set
 SEMEVAL_FILE = DATA_DIR / "semeval" / "Restaurants_Test_Gold.xml"  # human-labelled ABSA benchmark
+SEMEVAL_TRAIN_FILE = DATA_DIR / "semeval" / "Restaurants_Train_v2.xml"  # source of the model-selection dev set
 
 for _d in (RAW_DIR, PROCESSED_DIR, MODELS_DIR, OUTPUTS_DIR, LABELS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -40,6 +41,9 @@ for _d in (RAW_DIR, PROCESSED_DIR, MODELS_DIR, OUTPUTS_DIR, LABELS_DIR):
 YELP_CITY = os.getenv("RADVIEW_CITY", "Philadelphia")
 YELP_MAX_RESTAURANTS = int(os.getenv("RADVIEW_MAX_RESTAURANTS", "400"))
 YELP_START_DATE = os.getenv("RADVIEW_START_DATE", "2016-01-01")  # 6 years of history keeps CPU scoring manageable
+# How the N restaurants are chosen: "lifetime" Yelp review count (uses future information, favours survivors)
+# or "early" = most reviews in the first 12 months after the start date (see m1_ingest/ingest.py).
+SELECT_BY = os.getenv("RADVIEW_SELECT_BY", "lifetime")
 
 # --------------------------------------------------------------------------
 # Domain constants
@@ -71,9 +75,14 @@ MIN_REVIEWS_PAST = 6
 # are the test period, the VALID_MONTHS before them validation, the rest training.
 TEST_MONTHS = 18
 VALID_MONTHS = 6
-# Risk tiers are defined as *lift* over the base rate of declines in the training data, not as
-# fixed probabilities: real declines are rare (~6% of restaurant-months on Yelp), so a calibrated
-# model almost never outputs 30%, yet 2x the typical restaurant's risk is a meaningful warning.
+# A label at month t looks HORIZON_MONTHS ahead, so the last labels before each split boundary would see
+# ratings from the next period. They are dropped (a purge gap) so validation and test outcomes never leak back.
+SPLIT_GAP_MONTHS = HORIZON_MONTHS
+# Risk tiers are defined as *lift* over the typical restaurant's risk, not as fixed probabilities:
+# real declines are rare (~6% of restaurant-months on Yelp), so a calibrated model almost never
+# outputs 30%, yet 2x the typical restaurant's risk is a meaningful warning. "Typical" is the mean
+# predicted risk of the active restaurants in the same month, so the risk and its reference come
+# from the same calibrated model (the training base rate came from a different period).
 RISK_MEDIUM_LIFT = 1.5
 RISK_HIGH_LIFT = 2.0
 PLANS_TOP_N = 20               # the agent always covers at least the N riskiest active restaurants
@@ -82,7 +91,8 @@ PLANS_TOP_N = 20               # the agent always covers at least the N riskiest
 # M2 - transformer
 # --------------------------------------------------------------------------
 TRANSFORMER_BASE = os.getenv("RADVIEW_TRANSFORMER_BASE", "distilbert-base-uncased")
-MAX_SEQ_LEN = 128
+# 128 tokens cut off ~40% of Yelp reviews (and ~28% of aspect mentions); 256 covers most reviews.
+MAX_SEQ_LEN = int(os.getenv("RADVIEW_MAX_SEQ_LEN", "256"))
 
 # --------------------------------------------------------------------------
 # M5 - agent
@@ -98,6 +108,9 @@ OPEN_LLM_MODEL = os.getenv("RADVIEW_OPEN_LLM_MODEL", "qwen2.5:7b")
 OPEN_LLM_TIMEOUT = int(os.getenv("RADVIEW_OPEN_LLM_TIMEOUT", "600"))  # seconds per call; CPU inference is slow
 EVIDENCE_PER_ASPECT = 3
 EVIDENCE_LOOKBACK_MONTHS = 4
+# Plan refreshes requested through the API / dashboard use the rule-based planner unless this is "1":
+# otherwise anyone who can reach the dashboard can trigger paid LLM calls.
+ALLOW_LLM_REFRESH = os.getenv("RADVIEW_ALLOW_LLM_REFRESH", "0") == "1"
 
 # --------------------------------------------------------------------------
 # Compute device for the PyTorch models (M2 transformer, M4 GRU).

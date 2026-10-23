@@ -3,7 +3,7 @@
 * Yelp Open Dataset (Kaggle mirror "adamamer2001/yelp-complete-open-dataset-2024"):
   business, review, checkin and tip JSON files (~5.9 GB unzipped) -> data/yelp/
   By using it you accept Yelp's Dataset User Agreement (academic, non-commercial use).
-* SemEval-2014 Task 4 restaurant gold test set (HuggingFace mirror) -> data/semeval/
+* SemEval-2014 Task 4 restaurant gold test set + training set (HuggingFace mirror) -> data/semeval/
 
 Usage:  python scripts/download_data.py [--skip-yelp] [--skip-semeval]
 """
@@ -51,6 +51,12 @@ def download_semeval() -> None:
     from huggingface_hub import hf_hub_download
 
     SEMEVAL_DIR.mkdir(parents=True, exist_ok=True)
+    # the training file supplies the dev set M2 selects its production model on (the test set stays unseen)
+    train = hf_hub_download("alexcadillon/SemEval2014Task4",
+                            "SemEval'14-ABSA-TrainData_v2 & AnnotationGuidelines/Restaurants_Train_v2.xml",
+                            repo_type="dataset")
+    shutil.copy(train, SEMEVAL_DIR / "Restaurants_Train_v2.xml")
+    print("[semeval] saved Restaurants_Train_v2.xml")
     path = hf_hub_download("alexcadillon/SemEval2014Task4", "ABSA_Gold_TestData/Restaurants_Test_Gold.xml",
                            repo_type="dataset")
     shutil.copy(path, SEMEVAL_DIR / "Restaurants_Test_Gold.xml")

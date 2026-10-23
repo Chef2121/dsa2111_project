@@ -41,7 +41,7 @@ from radview.m5_agent import open_llm
 from radview.m5_agent.playbook import PLAYBOOK, actions_for, detect_sub_themes
 from radview.m5_agent.tools import (STORE, TOOL_SCHEMAS, compare_peers, execute_tool, get_evidence_reviews,
                                     query_metrics, run_forecast)
-from radview.m5_agent.verifier import verify_plan
+from radview.m5_agent.verifier import unsupported_text_figures, verify_plan
 
 MAX_ITEMS = 3
 LOW_VOLUME = 10   # fewer recent reviews than this -> plans carry an explicit small-sample caveat
@@ -85,17 +85,23 @@ def gather(state: PlanState) -> PlanState:
             "attempts": 0, "tool_calls": calls, "retrieved_ids": []}
 
 
-def _share(values: dict[str, float]) -> dict[str, float]:
-    pos = {a: max(values.get(a, 0.0), 0.0) for a in ASPECTS}
-    total = sum(pos.values())
-    return {a: (v / total if total > 0 else 0.0) for a, v in pos.items()}
+def _shap_share(attributions: dict[str, float]) -> dict[str, float]:
+    """Each aspect's share of *all* risk-raising SHAP mass, including the non-aspect drivers (rating trend,
+    volume, overall sentiment): when the rating trend drives the risk, no aspect gets a large share."""
+    total = sum(max(v, 0.0) for v in attributions.values())
+    return {a: (max(attributions.get(a, 0.0), 0.0) / total if total > 0 else 0.0) for a in ASPECTS}
+
+
+def _cf_share(risk_drop: dict[str, float], risk: float) -> dict[str, float]:
+    """Share of the restaurant's risk that disappears if the aspect were at the market norm."""
+    return {a: (min(max(risk_drop.get(a, 0.0), 0.0) / risk, 1.0) if risk > 0 else 0.0) for a in ASPECTS}
 
 
 def prioritise(state: PlanState) -> PlanState:
     """priority = (0.35*SHAP share + 0.35*counterfactual share + 0.30*urgency) / effort"""
     fc, aspects = state["forecast"], state["metrics"]["aspects"]
-    shap_share = _share(fc["attributions"])
-    cf_share = _share(fc.get("counterfactual_risk_drop", {}))
+    shap_share = _shap_share(fc["attributions"])
+    cf_share = _cf_share(fc.get("counterfactual_risk_drop", {}), fc["risk"])
     ranked = []
     for a in ASPECTS:
         m = aspects[a]
@@ -151,8 +157,7 @@ class RuleBasedPlanner:
             mets = aspect_metrics(state, a)
             rates, stars = mets["rates"], mets["stars"]
             themes = detect_sub_themes(a, [e["quote"] for e in ev])
-            trend = "rising" if p["change"] > 0.02 else "persistent"
-            headline = f"{a.capitalize()} complaints are {trend}" + (" (unusual spike)" if p["spike"] else "")
+            headline = _default_headline(p)
             n_recent = state["metrics"]["reviews_3m"]
             n_complaints = round(rates["complaint_rate_3m"] * n_recent)
             text = (f"{n_complaints} of {n_recent} reviews in the last 3 months ({rates['complaint_rate_3m']:.0%}) "
@@ -400,18 +405,35 @@ def route_after_verify(state: PlanState) -> str:
     return "finalise"
 
 
+def _default_headline(p: dict) -> str:
+    trend = "rising" if p["change"] > 0.02 else "persistent"
+    return f"{p['aspect'].capitalize()} complaints are {trend}" + (" (unusual spike)" if p["spike"] else "")
+
+
 def finalise(state: PlanState) -> PlanState:
     d, fc = state["draft_plan"], state["forecast"]
     pri = {p["aspect"]: p for p in state["priorities"]}
     biz = STORE.businesses.loc[state["business_id"]]
+    all_metrics = [aspect_metrics(state, a) for a in pri]
+    text_rejections = []  # free text (summary, headlines) is shown to the owner too, so its figures are checked
+
+    def checked_text(kind: str, aspect: str, text: str, fallback: str) -> str:
+        bad = unsupported_text_figures(text, all_metrics, fc.get("risk_lift"))
+        if bad:
+            text_rejections.append({"aspect": aspect, "text": f"[{kind}] {text}",
+                                    "reasons": [f"statistic: {b} not returned by any tool" for b in bad]})
+            return fallback
+        return text
+
     items = []
     for it in sorted(d["items"], key=lambda i: -pri[i["aspect"]]["priority"]):
         p = pri[it["aspect"]]
         kept = [c for c in it["claims"] if c["verified"]]
         if not any(c.get("type") == "review" for c in kept) and it["aspect"] != state["priorities"][0]["aspect"]:
             continue  # an item without any verified review evidence is not shown (except the top watch item)
+        headline = checked_text("headline", it["aspect"], it.get("headline", ""), _default_headline(p))
         items.append({
-            "aspect": it["aspect"], "priority": p["priority"], "headline": it.get("headline", ""),
+            "aspect": it["aspect"], "priority": p["priority"], "headline": headline,
             "risk_drop_if_fixed": p["risk_drop_if_fixed"], "star_cost": p["star_cost"], "effort": p["effort"],
             "relative_risk_drop": round(p["risk_drop_if_fixed"] / fc["risk"], 3) if fc["risk"] else 0.0,
             "why": ((f"At the market norm the decline risk would be {p['risk_drop_if_fixed'] / fc['risk']:.0%} lower "
@@ -424,15 +446,17 @@ def finalise(state: PlanState) -> PlanState:
         })
     for i, it in enumerate(items, start=1):
         it["rank"] = i
-    summary = d.get("summary") or (
+    default_summary = (
         f"{biz['name']} has a {fc['risk']:.0%} estimated probability of its rating dropping by 0.3 stars or more over "
         f"the next 3 months - {fc.get('risk_lift', 1):.1f}x the typical restaurant ({fc['risk_level']} risk)." + (f" Address {items[0]['aspect']} first." if items else ""))
+    summary = (checked_text("summary", items[0]["aspect"] if items else "", d["summary"], default_summary)
+               if d.get("summary") else default_summary)
     n_recent = state["metrics"]["reviews_3m"]
     if n_recent < LOW_VOLUME:
         summary += (f" Note: based on only {n_recent} reviews in the last 3 months - treat this as an early signal "
                     f"and re-check as more reviews arrive.")
     rejected = [{"aspect": it["aspect"], "text": c["text"], "reasons": c["reasons"]}
-                for it in d["items"] for c in it["claims"] if not c["verified"]]
+                for it in d["items"] for c in it["claims"] if not c["verified"]] + text_rejections
     plan = {"business_id": state["business_id"], "name": biz["name"], "month": fc["month"], "risk": fc["risk"],
             "risk_level": fc["risk_level"], "summary": summary, "items": items,
             "verification": d["verification"], "rejected_claims": rejected,

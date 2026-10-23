@@ -61,6 +61,13 @@ NEGATIVE_TERMS = {
 }
 
 NEGATORS = {"not", "no", "never", "hardly", "wasn't", "isn't", "weren't", "didn't", "don't", "nothing"}
+# "nothing but great", "not only good": the negator is cancelled by the word right after it.
+NEGATION_BREAKERS = {"but", "only"}
+
+# Fixed phrases whose words would otherwise trigger an aspect: "can't wait to come back" is not about
+# service waiting times, "worth the wait" is neither a price nor a service remark.
+IDIOMS = re.compile(r"\b(?:can(?:'|no)?t|couldn'?t) wait\b|\bworth the wait\b|\bwait(?:ing)? to (?:go|come|get) back\b",
+                    re.IGNORECASE)
 
 # Sub-themes used by the M5 action planner to make recommendations specific.
 SUB_THEMES: dict[str, dict[str, set[str]]] = {
@@ -102,6 +109,17 @@ def tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
 
 
+def aspect_tokens(sentence: str) -> list[str]:
+    """Tokens used to detect aspects: as ``tokenize`` but with idioms (``can't wait``...) removed."""
+    return tokenize(IDIOMS.sub(" ", sentence))
+
+
+def _negated(tokens: list[str], i: int) -> bool:
+    window = range(max(0, i - 3), i)
+    return any((tokens[j] in NEGATORS or tokens[j].endswith("n't"))
+               and not (j + 1 < len(tokens) and tokens[j + 1] in NEGATION_BREAKERS) for j in window)
+
+
 def split_sentences(text: str) -> list[str]:
     """Very light sentence splitter - good enough for review text."""
     return [s.strip() for s in _SENT_RE.split(text) if s.strip()]
@@ -114,7 +132,7 @@ def sentence_polarity(tokens: list[str]) -> int:
         val = 1 if tok in POSITIVE_TERMS else -1 if tok in NEGATIVE_TERMS else 0
         if val == 0:
             continue
-        if any(t in NEGATORS or t.endswith("n't") for t in tokens[max(0, i - 3):i]):
+        if _negated(tokens, i):
             val = -val
         score += val
     return (score > 0) - (score < 0)

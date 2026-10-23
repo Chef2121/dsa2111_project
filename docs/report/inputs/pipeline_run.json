@@ -1,22 +1,32 @@
 {
   "source": "yelp",
   "mode": "full",
-  "finished_at": "2026-10-15T00:23:19",
+  "finished_at": "2026-10-22T14:38:57",
   "timings_s": {
-    "m1": 54.2,
-    "m2": 6455.2,
-    "m3": 15.9,
-    "m4": 89.1,
-    "m5": 1.6
+    "m1": 0.4,
+    "m2": 1221.3,
+    "m3": 13.6,
+    "m4": 29.2,
+    "m5": 16.7
   },
   "m5": {
-    "plans": 0,
-    "claims_total": 0,
-    "claims_verified": 0,
-    "groundedness": null,
-    "planners": {},
-    "modes": {},
-    "failures_by_axis": {},
-    "median_latency_s": null
+    "plans": 62,
+    "claims_total": 296,
+    "claims_verified": 296,
+    "groundedness": 1.0,
+    "planners": {
+      "rule_based": 62
+    },
+    "modes": {
+      "rule_based": 62
+    },
+    "failures_by_axis": {
+      "citation": 0,
+      "quotation": 0,
+      "relevance": 0,
+      "statistic": 0,
+      "substance": 0
+    },
+    "median_latency_s": 0.09
   }
 }

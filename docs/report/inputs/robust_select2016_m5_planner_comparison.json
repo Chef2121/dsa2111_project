@@ -1,0 +1,46 @@
+{
+  "restaurants": 20,
+  "planners": {
+    "rule_based": {
+      "actually_ran": [
+        "rule_based"
+      ],
+      "claims_total": 81,
+      "claims_verified": 81,
+      "groundedness": 1.0,
+      "failures_by_axis": {
+        "citation": 0,
+        "quotation": 0,
+        "relevance": 0,
+        "statistic": 0,
+        "substance": 0
+      },
+      "mean_items_per_plan": 1.35,
+      "median_latency_s": 0.08,
+      "mean_tool_calls": 4.4,
+      "mean_tokens": null,
+      "llm_model": null
+    },
+    "adversarial": {
+      "actually_ran": [
+        "adversarial"
+      ],
+      "claims_total": 251,
+      "claims_verified": 0,
+      "groundedness": 0.0,
+      "failures_by_axis": {
+        "citation": 105,
+        "quotation": 60,
+        "relevance": 87,
+        "statistic": 111,
+        "substance": 20
+      },
+      "mean_items_per_plan": 1,
+      "median_latency_s": 0.15,
+      "mean_tool_calls": 4.4,
+      "mean_tokens": null,
+      "llm_model": null
+    }
+  },
+  "note": "LLM planner not run: set ANTHROPIC_API_KEY, or RADVIEW_LLM_PROVIDER=open with an Ollama server for the free open model."
+}

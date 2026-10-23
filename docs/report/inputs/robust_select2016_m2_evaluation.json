@@ -1,0 +1,179 @@
+{
+  "selected_model": "distilbert_finetuned",
+  "selected_on": "semeval2014_dev",
+  "weak_label_distribution": {
+    "food": [
+      6938,
+      27604,
+      5458
+    ],
+    "service": [
+      18643,
+      17117,
+      4240
+    ],
+    "cleanliness": [
+      37518,
+      1612,
+      870
+    ],
+    "price": [
+      29795,
+      7176,
+      3029
+    ],
+    "ambience": [
+      29497,
+      9080,
+      1423
+    ]
+  },
+  "benchmarks": {
+    "semeval2014": {
+      "n": 800,
+      "aspects": [
+        "food",
+        "service",
+        "price",
+        "ambience"
+      ]
+    },
+    "semeval2014_dev": {
+      "n": 800,
+      "aspects": [
+        "food",
+        "service",
+        "price",
+        "ambience"
+      ]
+    }
+  },
+  "results": {
+    "semeval2014": [
+      {
+        "model": "lexicon_rule",
+        "n_test": 800,
+        "macro_f1": 0.6614,
+        "complaint_f1": 0.4141,
+        "macro_f1_per_aspect": {
+          "food": 0.5985,
+          "service": 0.7546,
+          "price": 0.7188,
+          "ambience": 0.5736
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.3529,
+          "service": 0.5263,
+          "price": 0.5333,
+          "ambience": 0.2439
+        },
+        "inference_ms_per_review": 0.12
+      },
+      {
+        "model": "tfidf_logreg",
+        "n_test": 800,
+        "macro_f1": 0.7248,
+        "complaint_f1": 0.4983,
+        "macro_f1_per_aspect": {
+          "food": 0.6581,
+          "service": 0.8414,
+          "price": 0.7858,
+          "ambience": 0.6139
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.4218,
+          "service": 0.7069,
+          "price": 0.6207,
+          "ambience": 0.2439
+        },
+        "inference_ms_per_review": 0.05
+      },
+      {
+        "model": "distilbert_finetuned",
+        "n_test": 800,
+        "macro_f1": 0.7431,
+        "complaint_f1": 0.5497,
+        "macro_f1_per_aspect": {
+          "food": 0.7018,
+          "service": 0.8597,
+          "price": 0.7831,
+          "ambience": 0.6279
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5467,
+          "service": 0.7353,
+          "price": 0.6667,
+          "ambience": 0.25
+        },
+        "inference_ms_per_review": 1.06,
+        "train_seconds": 326.4,
+        "train_size": 6000
+      },
+      {
+        "model": "zero_shot_llm",
+        "skipped": "ANTHROPIC_API_KEY not set (or set RADVIEW_LLM_PROVIDER=open)"
+      }
+    ],
+    "semeval2014_dev": [
+      {
+        "model": "lexicon_rule",
+        "n_test": 800,
+        "macro_f1": 0.6047,
+        "complaint_f1": 0.3264,
+        "macro_f1_per_aspect": {
+          "food": 0.5962,
+          "service": 0.6226,
+          "price": 0.6508,
+          "ambience": 0.5492
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.3883,
+          "service": 0.3261,
+          "price": 0.383,
+          "ambience": 0.2083
+        },
+        "inference_ms_per_review": 0.15
+      },
+      {
+        "model": "tfidf_logreg",
+        "n_test": 800,
+        "macro_f1": 0.6838,
+        "complaint_f1": 0.4803,
+        "macro_f1_per_aspect": {
+          "food": 0.6707,
+          "service": 0.7082,
+          "price": 0.7451,
+          "ambience": 0.6112
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5303,
+          "service": 0.4771,
+          "price": 0.6,
+          "ambience": 0.3137
+        },
+        "inference_ms_per_review": 0.05
+      },
+      {
+        "model": "distilbert_finetuned",
+        "n_test": 800,
+        "macro_f1": 0.7009,
+        "complaint_f1": 0.5151,
+        "macro_f1_per_aspect": {
+          "food": 0.6913,
+          "service": 0.7609,
+          "price": 0.7347,
+          "ambience": 0.6167
+        },
+        "complaint_f1_per_aspect": {
+          "food": 0.5246,
+          "service": 0.5931,
+          "price": 0.6032,
+          "ambience": 0.3396
+        },
+        "inference_ms_per_review": 1.06,
+        "train_seconds": 326.4,
+        "train_size": 6000
+      }
+    ]
+  }
+}
