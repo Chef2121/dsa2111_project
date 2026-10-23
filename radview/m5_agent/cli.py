@@ -7,7 +7,9 @@ The comparison runs the rule-based planner, the adversarial planner and the
 configured LLM planner - Claude when ANTHROPIC_API_KEY is set, the free open model
 when RADVIEW_LLM_PROVIDER=open (never silently substituted) - and reports
 groundedness, per-axis verifier failures, items per plan, latency and token use
--> outputs/m5_planner_comparison.json.
+-> outputs/m5_planner_comparison.json. Every plan behind those numbers is kept in
+outputs/planner_comparison_plans/<planner>.json (keyed by business id), so each claim
+the comparison counted can be traced back to the plan that made it.
 """
 from __future__ import annotations
 
@@ -29,8 +31,11 @@ def compare(n: int) -> dict:
     llm = ["open_model"] if LLM_PROVIDER == "open" else (["claude"] if os.getenv("ANTHROPIC_API_KEY") else [])
     planners = ["rule_based", "adversarial"] + llm
     report = {"restaurants": len(targets), "planners": {}}
+    plans_dir = OUTPUTS_DIR / "planner_comparison_plans"   # not plans/: these must not replace the deployed plans
+    plans_dir.mkdir(parents=True, exist_ok=True)
     for name in planners:
         rows = [generate_plan(b, planner=name, save=False) for b in targets]
+        (plans_dir / f"{name}.json").write_text(json.dumps({p["business_id"]: p for p in rows}, indent=2, default=str))
         total = sum(p["verification"]["claims_total"] for p in rows)
         ok = sum(p["verification"]["claims_verified"] for p in rows)
         axes: dict[str, int] = {}
