@@ -7,7 +7,6 @@ Pages
                          about (vs. the market)? -> Is it getting worse? -> What do I do first?
     Alerts             live complaint spikes across all restaurants
     Try a review       paste reviews, see aspect sentiment and the complaint sentences (M2 live)
-    Model performance  M2-M5 evaluation results and model comparisons
     About              architecture
 
 Design rules: a restrained palette - navy for single-series data, one muted identity colour per
@@ -45,23 +44,17 @@ if IS_DARK:
     STATUS = {"high": ("#f97066", "High"), "medium": ("#f5a35c", "Medium"), "low": ("#47cd89", "Low")}
     # muted, desaturated identity colours: one per aspect, never by rank
     ASPECT_PALETTE = ["#8fa8d8", "#d6a77e", "#6fc2ad", "#b5a0d6", "#e0a4b3"]
-    SERIES = ["#8ea8ff", "#d6a77e", "#6fc2ad", "#b5a0d6", "#e0a4b3", "#c3cad6", "#6b7280"]
 else:
     INK, MUTED, GRID, SOFT = "#101828", "#667085", "#eaecf0", "#f2f4f7"
     BG, CARD, ACCENT, COMPARE = "#f8f9fb", "#ffffff", "#1e3a8a", "#98a2b3"
     STATUS = {"high": ("#b42318", "High"), "medium": ("#b54708", "Medium"), "low": ("#067647", "Low")}
     ASPECT_PALETTE = ["#3b5b92", "#b5835a", "#3f8f7b", "#8a6fb0", "#c27c8e"]
-    SERIES = ["#1e3a8a", "#b5835a", "#3f8f7b", "#8a6fb0", "#c27c8e", "#98a2b3", "#344054"]
 ASPECT_COLORS = dict(zip(ASPECTS, ASPECT_PALETTE))   # food steel-blue, service bronze, cleanliness sage, ...
 ASPECT_SCALE = alt.Scale(domain=ASPECTS, range=ASPECT_PALETTE)
 RISK = STATUS["high"][0]
 SEVERITY = {"critical": "Critical", "serious": "Serious", "warning": "Warning"}
 INCREASES, DECREASES = RISK, ACCENT                  # diverging poles for SHAP direction
 FONT = "Inter, -apple-system, 'Segoe UI', Roboto, sans-serif"
-MODEL_LABELS = {"majority": "Majority (base rate)", "current_negativity": "Current negativity (no model)",
-                "rating_logreg": "Rating trend · LogReg", "rating_lgbm": "Rating trend · LightGBM",
-                "sentiment_lgbm": "+ Overall sentiment · LightGBM", "radview_lgbm": "Radview features · LightGBM",
-                "radview_gru": "Radview · PyTorch GRU"}
 EFFORT_LABEL = {0.6: "quick fix", 0.8: "low effort", 0.9: "moderate effort", 1.0: "moderate effort",
                 1.3: "bigger investment"}
 
@@ -622,129 +615,6 @@ def page_analyse():
                             unsafe_allow_html=True)
 
 
-# ================================================================== Model performance
-def page_models():
-    """M2-M5 evaluation results exactly as the pipeline wrote them, with the M4 PR/ROC curves."""
-    ev = load("evaluation")
-    header("Model performance", "Every number below is produced by the pipeline's evaluation steps.")
-
-    m2 = ev.get("m2")
-    if m2:
-        with card("m2", "M2 · Aspect-sentiment classification",
-                  f"Selected for production: {m2['selected_model']} (by macro-F1 on {m2['selected_on']})"):
-            for bench, res in m2["results"].items():
-                role = (" · development set, used only to choose the production model" if bench.endswith("_dev")
-                        else " · held-out test set" if bench == "semeval2014" else "")
-                st.caption(f"{bench}{role} · {m2['benchmarks'][bench]['n']} labelled texts · aspects: "
-                           f"{', '.join(m2['benchmarks'][bench]['aspects'])}")
-                st.dataframe(pd.DataFrame([{"model": r["model"], "macro-F1": r.get("macro_f1"),
-                                            "complaint-F1": r.get("complaint_f1"),
-                                            "ms / review": r.get("inference_ms_per_review"),
-                                            "note": r.get("skipped", "")} for r in res]),
-                             hide_index=True, use_container_width=True)
-
-    m3 = ev.get("m3")
-    if m3:
-        with card("m3", "M3 · Emerging-complaint detection",
-                  f"Base rate of a decline in the next 3 months: {m3['base_rate']:.1%}. Lift = precision ÷ base rate; "
-                  "'random timing' moves each restaurant's alerts to random months."):
-            st.dataframe(pd.DataFrame([{
-                "detector": k.replace("_", " "), "flag rate": v.get("flag_rate"), "lift": v.get("lift"),
-                "lift (random timing)": (v.get("chance") or {}).get("lift"),
-                "onsets detected %": v.get("onsets_detected_pct"),
-                "onsets detected % (random timing)": (v.get("chance") or {}).get("onsets_detected_pct"),
-                "lasting-drop lift": (v.get("lasting_drop") or {}).get("lift"),
-                "lasting-drop lift (random timing)": (v.get("chance") or {}).get("lasting_drop_lift"),
-                "median lead (mo)": v.get("median_lead_months")} for k, v in m3.items() if isinstance(v, dict)]),
-                hide_index=True, use_container_width=True)
-            st.caption("'Lasting drop' = the next 3 months are ≥0.3★ below the 6-month rating from before the alert.")
-
-    m4 = ev.get("m4")
-    if m4:
-        sp = m4["split"]
-        with card("m4", "M4 · Rating-decline forecasting (out-of-time test)",
-                  f"Train {sp['train']} · validation {sp['valid']} · test {sp['test']} "
-                  f"({sp['n_test']:,} business-months, {sp['pos_rate_test']:.1%} declines"
-                  + (f"; {sp['gap_months']} months purged before each boundary" if sp.get("gap_months") else "")
-                  + "). All models Platt-calibrated on the validation months."):
-            st.dataframe(pd.DataFrame([{
-                "model": MODEL_LABELS.get(k, k), "AUROC": r["auroc"], "PR-AUC": r["pr_auc"], "Brier ↓": r.get("brier"),
-                "precision@10%": r["precision_at_10pct"], "recall@10%": r["recall_at_10pct"],
-                "onsets warned %": (r.get("early_warning") or {}).get("detected_pct"),
-                "warned % by random alerts": (r.get("early_warning") or {}).get("chance_detected_pct"),
-                "median lead (mo)": (r.get("early_warning") or {}).get("median_lead_months")}
-                for k, r in m4["results"].items()]), hide_index=True, use_container_width=True)
-            if m4.get("injected_episodes"):
-                st.caption("Injected deterioration episodes (synthetic ground truth): caught at all, and caught "
-                           "before the 3-month rating visibly dropped")
-                st.dataframe(pd.DataFrame([{"model": MODEL_LABELS.get(k, k), **v}
-                                           for k, v in m4["injected_episodes"].items()]),
-                             hide_index=True, use_container_width=True)
-        curves = load("m4_curves")
-        if curves:
-            dom = [MODEL_LABELS.get(k, k) for k in curves]
-            col = alt.Color("model:N", scale=alt.Scale(domain=dom, range=SERIES[:len(dom)]),
-                            title=None, legend=alt.Legend(orient="top", columns=2))
-            pr = pd.concat([pd.DataFrame({"model": MODEL_LABELS.get(k, k), "recall": v["pr"]["recall"],
-                                          "precision": v["pr"]["precision"]}) for k, v in curves.items()])
-            roc = pd.concat([pd.DataFrame({"model": MODEL_LABELS.get(k, k), "fpr": v["roc"]["fpr"], "tpr": v["roc"]["tpr"]})
-                             for k, v in curves.items()])
-            c1, c2 = st.columns(2, gap="medium")
-            with c1, card("pr", "Precision–recall", "Higher is better at the low-recall end, where alerts are set",
-                          data=pr):
-                chart(alt.Chart(pr).mark_line(strokeWidth=2).encode(
-                    x=alt.X("recall:Q", title="Recall"), y=alt.Y("precision:Q", title="Precision"), color=col,
-                    tooltip=["model:N", alt.Tooltip("recall:Q", format=".2f"), alt.Tooltip("precision:Q", format=".2f")]
-                ).properties(height=320))
-            with c2, card("roc", "ROC", "True- against false-positive rate", data=roc):
-                chart(alt.Chart(roc).mark_line(strokeWidth=2).encode(
-                    x=alt.X("fpr:Q", title="False-positive rate"), y=alt.Y("tpr:Q", title="True-positive rate"),
-                    color=col, tooltip=["model:N", alt.Tooltip("fpr:Q", format=".2f"), alt.Tooltip("tpr:Q", format=".2f")]
-                ).properties(height=320))
-        agr = m4.get("attribution_agreement")
-        if agr:
-            a1, a2, a3 = st.columns(3)
-            a1.metric("SHAP vs counterfactual: same top aspect", pct(agr["all"].get("top_aspect_agreement")),
-                      help=f"over {agr['all'].get('n')} restaurants")
-            a2.metric("…among at-risk restaurants", pct(agr["at_risk"].get("top_aspect_agreement")),
-                      help=f"over {agr['at_risk'].get('n')} restaurants")
-            a3.metric("Mean rank correlation (Spearman)", f"{agr['all'].get('mean_spearman') or 0:.2f}")
-            st.caption("Star-impact model (ridge, monthly stars ~ complaint rates; stars per unit complaint rate): " +
-                       ", ".join(f"{a} {c:+.2f}" for a, c in agr["star_impact_coefficients"].items()))
-        if m4.get("lgbm_top_features_shap"):
-            imp = pd.DataFrame(list(m4["lgbm_top_features_shap"].items()), columns=["feature", "mean |SHAP|"])
-            with card("imp", "Top features", "LightGBM, mean |SHAP| on the test period", data=imp):
-                chart(alt.Chart(imp).mark_bar(color=ACCENT, cornerRadiusEnd=3, height=12).encode(
-                    y=alt.Y("feature:N", sort="-x", title=None, axis=alt.Axis(labelOverlap=False, labelLimit=220)),
-                    x=alt.X("mean |SHAP|:Q"), tooltip=["feature:N", alt.Tooltip("mean |SHAP|:Q", format=".4f")]
-                ).properties(height=24 * len(imp)))
-
-    m5, fb, comp = ev.get("m5"), ev.get("feedback", {}), ev.get("m5_comparison")
-    if m5:
-        st.markdown("<div class='rv-title' style='font-size:1.25rem;margin-top:18px'>M5 · Grounded action plans</div>",
-                    unsafe_allow_html=True)
-        k = st.columns(4)
-        k[0].metric("Plans generated", m5["plans"])
-        k[1].metric("Claims verified", f"{m5['claims_verified']}/{m5['claims_total']}")
-        k[2].metric("Groundedness", pct(m5["groundedness"]),
-                    help="Target ≥ 90%. The rule-based planner builds its claims from exactly the figures and "
-                         "quotes the verifier checks, so it scores 100% by construction; the LLM planners and the "
-                         "adversarial planner are the real tests.")
-        k[3].metric("Owner usefulness", f"{fb.get('mean_usefulness') or '–'} / 5",
-                    help=f"{fb.get('n', 0)} ratings; target ≥ 4")
-    if comp:
-        with card("m5", "Planner comparison",
-                  f"On the {comp['restaurants']} riskiest restaurants. The adversarial planner fabricates claims on "
-                  "purpose; the verifier must reject all of them."):
-            st.dataframe(pd.DataFrame([{"planner": k, "groundedness": v["groundedness"], "claims": v["claims_total"],
-                                        **{f"✗ {a}": n for a, n in v["failures_by_axis"].items()},
-                                        "items / plan": v["mean_items_per_plan"], "latency (s)": v["median_latency_s"],
-                                        "tool calls": v["mean_tool_calls"], "tokens": v["mean_tokens"]}
-                                       for k, v in comp["planners"].items()]), hide_index=True, use_container_width=True)
-            if comp.get("note"):
-                st.caption(comp["note"])
-
-
 # ================================================================== About
 def page_about():
     """Architecture diagram and a one-line summary of each module."""
@@ -787,7 +657,6 @@ PAGES = {
     "restaurant": st.Page(page_restaurant, title="Restaurant", icon=":material/storefront:", url_path="restaurant"),
     "alerts": st.Page(page_alerts, title="Alerts", icon=":material/notifications:", url_path="alerts"),
     "analyse": st.Page(page_analyse, title="Try a review", icon=":material/rate_review:", url_path="analyse"),
-    "models": st.Page(page_models, title="Model performance", icon=":material/monitoring:", url_path="models"),
     "about": st.Page(page_about, title="About", icon=":material/info:", url_path="about"),
 }
 nav = st.navigation(list(PAGES.values()))

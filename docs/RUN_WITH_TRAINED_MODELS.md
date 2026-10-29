@@ -120,7 +120,7 @@ restaurants whose complaints are spiking this month.
 
 ### c) See how good the models are
 
-Dashboard → **Model performance**, or read [`docs/RESULTS.md`](RESULTS.md) (tables) and
+Read [`docs/RESULTS.md`](RESULTS.md) (tables, also served by the API at `GET /evaluation`) and
 [`docs/FINDINGS.md`](FINDINGS.md) (what they mean — including what did *not* work).
 
 | Model | Test | Result |
@@ -165,17 +165,15 @@ The report's figures and tables rebuild from the repo alone — see [`docs/repor
 
 ## 4. Demo script for the presentation (~5 minutes)
 
-1. **Portfolio** — "Radview monitors 327 active Philadelphia restaurants; 15 are flagged high risk —
+1. **Portfolio** — "Radview monitors 327 active Philadelphia restaurants; 41 are flagged high risk —
    at least twice the typical restaurant's chance of a 0.3-star drop in the next 3 months."
 2. Click the top restaurant → **Restaurant** page: read the verdict line, point at the complaint bars vs the
    market-median ticks, pick an issue to show its trend and spike markers.
 3. Scroll to **What to do first**: the ranked actions, the star-cost / risk badges, the verified review
    quotes, and the **Verifier log** ("nothing reaches the owner unless it is backed by a review").
-4. **🔍 Why at risk** tab: SHAP and the counterfactual side by side.
+4. **Why at risk** tab (under *Details*): SHAP and the counterfactual side by side.
 5. **Try a review**: type a fresh review live and show the model picking out the complaint.
-6. **Model performance**: SemEval scores, the forecasting comparison, and the planner comparison where the
-   hallucinating planner scores 0%.
-7. Optional: show `http://localhost:8000/docs` to demonstrate the REST API, and the Kubernetes manifests in
+6. Optional: show `http://localhost:8000/docs` to demonstrate the REST API, and the Kubernetes manifests in
    `k8s/`.
 
 Tip: start the dashboard 2 minutes before you present and click through each page once so everything is cached.

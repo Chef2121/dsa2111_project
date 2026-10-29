@@ -159,7 +159,7 @@ like this — and the machine was switched back afterwards:
    `curl -fsSL https://ollama.com/install.sh | sh` and create that override (`OLLAMA_MODELS=/mnt/nvme/ollama`,
    `OLLAMA_CONTEXT_LENGTH=16384`).
 3. Run the comparison in a one-off container next to the app (it writes `m5_planner_comparison.json` onto the
-   volume, which the dashboard's *Model performance* page shows):
+   volume, which the API's `GET /evaluation` endpoint returns):
    ```bash
    PV=$(kubectl get pv $(kubectl -n radview get pvc radview-data -o jsonpath={.spec.volumeName}) -o jsonpath={.spec.hostPath.path}{.spec.local.path})
    docker run --rm --network host -v "$PV":/data -e RADVIEW_DATA_DIR=/data -e RADVIEW_SOURCE=yelp \
