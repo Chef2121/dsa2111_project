@@ -24,6 +24,7 @@ from radview.m5_agent.tools import STORE  # noqa: E402
 
 
 def plan_text(plan: dict, label: str) -> str:
+    """A plan as plain text for the usefulness form, with the restaurant's name replaced by ``label``."""
     name = STORE.businesses.loc[plan["business_id"], "name"]
     lines = [plan["summary"].replace(name, label), ""]
     for it in plan["items"]:
@@ -37,6 +38,7 @@ def plan_text(plan: dict, label: str) -> str:
 
 
 def main() -> None:
+    """Export anonymised plans for the given restaurants (saved or freshly generated) to ``--out``."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("business_ids", nargs="+")
     ap.add_argument("--planner", default="saved", choices=["saved", "rule_based", "open_model", "claude"],
