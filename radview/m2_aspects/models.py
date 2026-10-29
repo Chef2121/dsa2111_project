@@ -35,15 +35,18 @@ N_CLS = 3
 
 
 def _onehot(labels: np.ndarray) -> np.ndarray:
+    """Hard labels (n, aspects) -> one-hot "probabilities" (n, aspects, 3), so rule/LLM models share the interface."""
     out = np.zeros((*labels.shape, N_CLS), dtype=np.float32)
     np.put_along_axis(out, labels[..., None], 1.0, axis=-1)
     return out
 
 
 class LexiconModel:
+    """Baseline 1: the weak-labelling rule (seed terms + opinion words + star fallback) used as a classifier."""
     name = "lexicon_rule"
 
     def predict_proba(self, texts, stars=None):
+        """Label each text with the rule; ``stars`` (NaN = unknown) only fill in opinion-less sentences."""
         stars = stars if stars is not None else [float("nan")] * len(texts)
         labs = np.array([[label_review(t, s)[a] for a in ASPECTS] for t, s in zip(texts, stars)])
         return _onehot(labs)
@@ -54,10 +57,12 @@ class TfidfModel:
     name = "tfidf_logreg"
 
     def __init__(self):
+        """Unfitted model: call ``fit`` or use ``load``."""
         self.vec = None
         self.clfs = {}
 
     def fit(self, texts, y: np.ndarray):
+        """Fit one shared vocabulary, then one class-balanced LR per aspect on ``y`` (n, aspects) in {0,1,2}."""
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.linear_model import LogisticRegression
 
@@ -70,18 +75,22 @@ class TfidfModel:
         return self
 
     def predict_proba(self, texts, stars=None):
+        """Class probabilities (n, aspects, 3); ``stars`` is ignored (the model reads only the text)."""
         X = self.vec.transform(texts)
         out = np.zeros((X.shape[0], len(ASPECTS), N_CLS), dtype=np.float32)
         for i, a in enumerate(ASPECTS):
             clf = self.clfs[a]
+            # a class absent from training (e.g. no cleanliness praise) keeps probability 0
             out[:, i, clf.classes_] = clf.predict_proba(X)
         return out
 
     def save(self, path: Path = MODELS_DIR / "tfidf_aspects.joblib"):
+        """Persist the vectoriser and the per-aspect classifiers together."""
         joblib.dump({"vec": self.vec, "clfs": self.clfs}, path)
 
     @classmethod
     def load(cls, path: Path = MODELS_DIR / "tfidf_aspects.joblib"):
+        """Restore a model written by ``save``."""
         obj = cls()
         d = joblib.load(path)
         obj.vec, obj.clfs = d["vec"], d["clfs"]
@@ -94,6 +103,8 @@ class TransformerModel:
     DIR = MODELS_DIR / "transformer_aspects"
 
     def __init__(self, base: str = TRANSFORMER_BASE):
+        """Load the pre-trained encoder ``base`` (a model name or a saved directory) and add an untrained
+        linear head with 3 outputs per aspect."""
         import torch
         from transformers import AutoModel, AutoTokenizer
 
@@ -113,18 +124,25 @@ class TransformerModel:
         return self.torch.autocast(device_type="cuda", dtype=self.torch.bfloat16, enabled=enabled)
 
     def _forward(self, batch_texts, encoder=None):
+        """Tokenise a batch (truncated to MAX_SEQ_LEN) and return logits of shape (batch, aspects, 3)."""
         enc = self.tok(list(batch_texts), truncation=True, max_length=MAX_SEQ_LEN, padding=True,
                        return_tensors="pt").to(self.device)
         hidden = (encoder or self.encoder)(**enc).last_hidden_state[:, 0]  # [CLS] representation
         return self.head(hidden).view(-1, len(ASPECTS), N_CLS)
 
     def fit(self, texts, y: np.ndarray, epochs: int = 2, batch_size: int = 32, lr: float = 3e-5):
+        """Fine-tune encoder and head together on weak labels ``y`` (n, aspects) in {0,1,2}.
+
+        Loss = sum over aspects of class-weighted cross-entropy; AdamW with 10% linear warm-up then linear
+        decay, gradient clipping at 1.0, fixed seed for reproducibility.
+        """
         torch = self.torch
         torch.manual_seed(RANDOM_SEED)
         params = list(self.encoder.parameters()) + list(self.head.parameters())
         opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
         n = len(texts)
         steps = epochs * ((n + batch_size - 1) // batch_size)
+        # learning-rate multiplier: ramps up over the first 10% of steps, then decays linearly to 0
         sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / (0.1 * steps)) * max(0.0, 1 - s / steps))
         # Class weights counter the dominance of "not mentioned" for rare aspects.
         counts = np.stack([np.bincount(y[:, i], minlength=N_CLS) for i in range(len(ASPECTS))]) + 1
@@ -164,6 +182,10 @@ class TransformerModel:
         return self._qencoder
 
     def predict_proba(self, texts, stars=None, batch_size: int | None = None, quantize: bool = True):
+        """Softmax probabilities (n, aspects, 3) in the input order; ``stars`` is ignored (text only).
+
+        On CPU the int8-quantised encoder is used unless ``quantize=False``.
+        """
         torch = self.torch
         batch_size = batch_size or (256 if self.device == "cuda" else 128)
         self.encoder.eval()
@@ -180,6 +202,7 @@ class TransformerModel:
         return out
 
     def save(self, path: Path = DIR):
+        """Write the fine-tuned encoder + tokenizer (Hugging Face format) and the head weights under ``path``."""
         path.mkdir(parents=True, exist_ok=True)
         self.encoder.save_pretrained(path / "encoder")
         self.tok.save_pretrained(path / "encoder")
@@ -187,6 +210,7 @@ class TransformerModel:
 
     @classmethod
     def load(cls, path: Path = DIR):
+        """Restore a model written by ``save``, ready for inference."""
         obj = cls(base=str(path / "encoder"))
         obj.head.load_state_dict(obj.torch.load(path / "head.pt", map_location=obj.device))
         obj.encoder.eval()
@@ -210,6 +234,7 @@ class ZeroShotLLMModel:
     )
 
     def __init__(self, provider: str = LLM_PROVIDER):
+        """Set up the Anthropic client, or remember the open-model name for the OpenAI-compatible endpoint."""
         self.provider = provider
         self.parse_failures = 0
         if provider == "open":
@@ -222,9 +247,11 @@ class ZeroShotLLMModel:
 
     @staticmethod
     def available() -> bool:
+        """True if an LLM can be called: the open model is configured, or a Claude API key is set."""
         return LLM_PROVIDER == "open" or bool(os.getenv("ANTHROPIC_API_KEY"))
 
     def _complete(self, prompt: str) -> str:
+        """Send one prompt and return the reply text ("" if Claude refuses)."""
         if self.provider == "open":
             from radview.m5_agent import open_llm
 
@@ -235,12 +262,14 @@ class ZeroShotLLMModel:
         return "" if msg.stop_reason == "refusal" else "".join(b.text for b in msg.content if b.type == "text")
 
     def predict_proba(self, texts, stars=None):
+        """One LLM call per text; the JSON reply becomes one-hot labels. Unknown or missing values count as "none"."""
         mapping = {"none": 0, "positive": 1, "negative": 2}
         labs = []
         self.parse_failures = 0
         for t in texts:
             raw = self._complete(self.PROMPT.format(text=t))
             try:
+                # take the outermost {...} so prose around the JSON (e.g. "Here are the labels:") is tolerated
                 d = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
                 if not isinstance(d, dict):
                     raise ValueError

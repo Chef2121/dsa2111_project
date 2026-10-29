@@ -130,6 +130,9 @@ def load_benchmarks(reviews: pd.DataFrame) -> dict[str, tuple[pd.DataFrame, list
 
 
 def evaluate_zero_shot(llm, df: pd.DataFrame, aspects: list[str], n: int = ZERO_SHOT_N) -> dict:
+    """Evaluate the zero-shot LLM on a random sample of ``n`` texts (it is slow), recording the provider,
+    model and how many replies were not valid JSON.
+    """
     # a random (not first-n) sample, so a partial run is still a fair sample of the benchmark
     sample = df if n >= len(df) else df.sample(n, random_state=RANDOM_SEED)
     res = evaluate(llm, sample, aspects)
@@ -160,6 +163,10 @@ def run_zero_shot_only(n: int = ZERO_SHOT_N) -> dict:
 
 def run(use_transformer: bool = True, train_size: int = 6000, tfidf_size: int = 40000, epochs: int = 2,
         reuse_transformer: bool = False) -> dict:
+    """M2 entry point: weak-label the reviews, train TF-IDF and (optionally) DistilBERT, evaluate every model on
+    every benchmark, and choose the production model on the selection set (never the test set if a
+    dev set exists). Writes models/m2_selected.json and outputs/m2_evaluation.json.
+    """
     reviews = pd.read_parquet(PROCESSED_DIR / "reviews.parquet")
     benchmarks = load_benchmarks(reviews)
     in_domain = benchmarks.get("in_domain", (None,))[0]
@@ -177,6 +184,7 @@ def run(use_transformer: bool = True, train_size: int = 6000, tfidf_size: int = 
     results: dict[str, list] = {name: [] for name in benchmarks}
 
     def record(model, extra=None):
+        """Evaluate ``model`` on every benchmark and append the results (plus ``extra``) to the report."""
         for name, (df, aspects) in benchmarks.items():
             res = evaluate(model, df, aspects)
             res.update(extra or {})

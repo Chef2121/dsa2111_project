@@ -65,6 +65,9 @@ STAR_CUES: dict[str, tuple[str, ...] | None] = {
 
 
 def _supported(value: float, metrics: dict, cues: dict, clause: str, tol: float, scale: float = 1.0) -> bool:
+    """True if ``value`` matches, within ``tol``, a metric whose cue words appear in ``clause`` (metrics with
+    no cue list always qualify).
+    """
     low = clause.lower()
     for name, v in metrics.items():
         if not isinstance(v, (int, float)):
@@ -110,6 +113,7 @@ def unsupported_text_figures(text: str, metrics_list: list[dict], risk_lift: flo
 
 
 def _norm(s: str) -> str:
+    """Whitespace-collapsed, lower-case text without surrounding quotes, for verbatim-quote matching."""
     return re.sub(r"\s+", " ", s).strip().strip('"“”').lower()
 
 

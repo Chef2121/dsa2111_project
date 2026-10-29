@@ -32,9 +32,13 @@ from radview.m5_agent.tools import STORE
 
 
 class HallucinatingPlanner:
+    """Test planner that fabricates claims on purpose (one per verifier failure mode, plus realistic mistakes
+    built from real figures and real citations). The verifier must reject every one of them.
+    """
     name = "adversarial"
 
     def draft(self, state) -> tuple[dict, dict]:
+        """Build the fabricated plan for the top-priority aspect."""
         bid = state["business_id"]
         aspect = state["priorities"][0]["aspect"]
         rev = STORE.reviews

@@ -169,10 +169,12 @@ START, END = pd.Period("2019-01", "M"), pd.Period("2024-12", "M")
 
 
 def _sigmoid(x: float) -> float:
+    """Logistic function."""
     return 1.0 / (1.0 + np.exp(-x))
 
 
 def _rand_id(rng: np.random.Generator, n: int = 22) -> str:
+    """Random Yelp-style id of ``n`` characters."""
     alphabet = np.array(list(string.ascii_letters + string.digits + "-_"))
     return "".join(rng.choice(alphabet, n))
 

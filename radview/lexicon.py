@@ -115,6 +115,9 @@ def aspect_tokens(sentence: str) -> list[str]:
 
 
 def _negated(tokens: list[str], i: int) -> bool:
+    """True if a negator ("not", "never", any "n't" word) is among the 3 tokens before position ``i``,
+    unless it is directly followed by a breaker such as "but"/"only" ("nothing but great" is praise).
+    """
     window = range(max(0, i - 3), i)
     return any((tokens[j] in NEGATORS or tokens[j].endswith("n't"))
                and not (j + 1 < len(tokens) and tokens[j + 1] in NEGATION_BREAKERS) for j in window)

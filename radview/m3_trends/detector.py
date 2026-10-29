@@ -65,11 +65,17 @@ def _robust_z(values: pd.Series, groups: dict[str, np.ndarray], se_of_median) ->
 
 
 def detect(panel: pd.DataFrame, save: bool = True) -> pd.DataFrame:
+    """M3: per restaurant-month and aspect, the EWMA-smoothed complaint rate, its robust z-score against the
+    restaurant's own previous 12 months, and a spike flag (z > SPIKE_Z with at least SPIKE_MIN_MENTIONS
+    recent complaints). The same detector on the star rating gives ``rating_alarm``.
+    Writes processed/aspect_trends.parquet when ``save``.
+    """
     panel = panel.reset_index(drop=True)
     out = panel[["business_id", "month"]].copy()
     g = panel.groupby("business_id", sort=False)
 
     def ewm(col):
+        """Per-restaurant EWMA (span EWMA_SPAN) of ``col``; numerators and denominators are smoothed separately."""
         return g[col].transform(lambda s: s.ewm(span=EWMA_SPAN, adjust=False).mean())
 
     n_ewm = ewm("n_reviews")
@@ -80,6 +86,9 @@ def detect(panel: pd.DataFrame, save: bool = True) -> pd.DataFrame:
         out[f"{a}_rate"] = rate
 
         def binom_se(med, idx):
+            """Binomial standard error of a rate near the baseline median for the effective review count, so the
+            z-score scale widens for low-volume restaurants.
+            """
             p = np.clip(med, 0.02, 0.98)
             return np.sqrt(p * (1 - p) / n_eff[idx])
         out[f"{a}_z"] = _robust_z(rate, g.indices, binom_se).fillna(0).clip(-10, 10)
@@ -157,6 +166,9 @@ def evaluate(trends: pd.DataFrame, labels: pd.DataFrame, horizon_back: int = 6) 
         lasting = (ok, (df["future_rating"].to_numpy() <= ref_pre - DECLINE_THRESHOLD).astype(float))
 
     def score(flag: np.ndarray) -> dict:
+        """Precision, lift over the base rate, share of decline onsets flagged beforehand and median lead time for
+        one alert series (plus the lasting-drop lift when available).
+        """
         f = flag[labelled]
         prec = float(y[labelled][f].mean()) if f.any() else float("nan")
         leads = _lead_times(flag, onset, biz, horizon_back)
@@ -173,6 +185,7 @@ def evaluate(trends: pd.DataFrame, labels: pd.DataFrame, horizon_back: int = 6) 
         return r
 
     def mean(values, digits):  # None (e.g. no alerts at all) counts as missing
+        """Mean over replicates, ignoring missing values."""
         vals = np.array([np.nan if v is None else v for v in values], dtype=float)
         return round(float(np.nanmean(vals)), digits) if (~np.isnan(vals)).any() else None
 

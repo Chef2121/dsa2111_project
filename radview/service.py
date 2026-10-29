@@ -25,6 +25,8 @@ def fresh(fn):
     """Reload the cached pipeline outputs first if a newer pipeline run has finished."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        """Refresh the store if needed, then call ``fn`` (functools.wraps keeps ``fn``'s own docstring)."""
+        # cheap check of the pipeline_run.json timestamp; reloads the parquet tables only when it changed
         STORE.refresh_if_changed()
         return fn(*args, **kwargs)
     return wrapper
@@ -45,6 +47,7 @@ def _clean(obj):
 
 @fresh
 def meta() -> dict:
+    """Headline facts about the loaded data: source, latest complete month, counts and the last pipeline run."""
     run = OUTPUTS_DIR / "pipeline_run.json"
     return _clean({"source": SOURCE, "latest_month": STORE.latest_month, "restaurants": int(len(STORE.businesses)),
                    "reviews": int(len(STORE.reviews)),
@@ -53,6 +56,11 @@ def meta() -> dict:
 
 @fresh
 def list_restaurants(active_only: bool = True) -> list[dict]:
+    """Every restaurant's latest risk, ratings, main risk driver and recent spikes, riskiest first.
+
+    A spike counts if M3 flagged the aspect this month or in the two months before (``*_spike_3m``).
+    ``active_only`` keeps restaurants with at least one review in the last 3 months.
+    """
     latest = STORE.risk_latest.reset_index()
     feat = STORE.features[STORE.features["month"] == STORE.latest_month].set_index("business_id")
     trends = STORE.trends[STORE.trends["month"] == STORE.latest_month].set_index("business_id")
@@ -71,6 +79,7 @@ def list_restaurants(active_only: bool = True) -> list[dict]:
 
 @fresh
 def restaurant(business_id: str) -> dict:
+    """Detail view of one restaurant, built from the same tools the M5 agent calls (so numbers always match)."""
     biz = STORE.businesses.loc[business_id]
     info = {k: biz[k] for k in ("name", "address", "city", "state", "cuisine", "categories", "yelp_stars",
                                 "yelp_review_count", "is_open")}
@@ -80,6 +89,8 @@ def restaurant(business_id: str) -> dict:
 
 @fresh
 def timeline(business_id: str) -> list[dict]:
+    """One row per month: review volume and mean stars (M1), aspect rates/z-scores/spikes (M3), predicted risk
+    and decline label (M4), and the 3-month complaint rate next to the market median (M4 features)."""
     p = STORE.panel[STORE.panel["business_id"] == business_id][["month", "n_reviews", "mean_stars", "checkins"]]
     t = STORE.trends[STORE.trends["business_id"] == business_id]
     cols = ["month"] + [f"{a}_{s}" for a in ASPECTS for s in ("rate", "z", "spike")] + ["rating_alarm"]
@@ -92,6 +103,8 @@ def timeline(business_id: str) -> list[dict]:
 
 @fresh
 def reviews(business_id: str, aspect: str | None = None, sentiment: str | None = None, limit: int = 50) -> list[dict]:
+    """Newest-first reviews with their M2 labels; with ``aspect``, only reviews labelled with that sentiment on it
+    (both polarities if ``sentiment`` is not given)."""
     rev = STORE.business_reviews(business_id).sort_values("date", ascending=False)
     if aspect:
         want = {"negative": [LABEL_NEG], "positive": [LABEL_POS]}.get(sentiment or "", [LABEL_NEG, LABEL_POS])
@@ -105,6 +118,7 @@ def reviews(business_id: str, aspect: str | None = None, sentiment: str | None =
 
 @fresh
 def plan(business_id: str, refresh: bool = False, use_llm: bool | None = None) -> dict:
+    """The restaurant's verified action plan: the cached one written by the pipeline, or a fresh M5 run."""
     path = PLANS_DIR / f"{business_id}.json"
     if path.exists() and not refresh:
         return json.loads(path.read_text())
@@ -114,6 +128,7 @@ def plan(business_id: str, refresh: bool = False, use_llm: bool | None = None) -
 
 
 def evaluation() -> dict:
+    """The evaluation JSON files the pipeline wrote for M2-M5 (None where a step has not run yet)."""
     out = {}
     for key in ("m2", "m3", "m4", "m5"):
         f = OUTPUTS_DIR / f"{key}_evaluation.json"
@@ -134,9 +149,10 @@ def m4_curves(points: int = 60) -> dict:
     tp = pd.read_parquet(f)
     y = tp["decline"].to_numpy()
     out = {}
-    for m in [c for c in tp.columns if c not in {"business_id", "month", "decline"}]:
+    for m in [c for c in tp.columns if c not in {"business_id", "month", "decline"}]:  # one column per model
         prec, rec, _ = precision_recall_curve(y, tp[m])
         fpr, tpr, _ = roc_curve(y, tp[m])
+        # thin the curves to ``points`` evenly spaced samples so the JSON stays small
         ip = np.linspace(0, len(rec) - 1, points).astype(int)
         ir = np.linspace(0, len(fpr) - 1, points).astype(int)
         out[m] = {"pr": {"recall": rec[ip].round(4).tolist(), "precision": prec[ip].round(4).tolist()},
@@ -158,6 +174,7 @@ def add_feedback(business_id: str, usefulness: int, comment: str = "", aspect: s
 
 
 def feedback_summary() -> dict:
+    """Number of usefulness ratings so far and their mean (None before the first rating)."""
     if not FEEDBACK_FILE.exists():
         return {"n": 0, "mean_usefulness": None}
     fb = pd.read_csv(FEEDBACK_FILE)
@@ -194,6 +211,7 @@ def analyse(texts: list[str]) -> list[dict]:
     from radview.m5_agent.tools import aspect_model
 
     model = aspect_model()
+    # pasted text has no star rating: pass NaN (only the lexicon model reads stars, as its fallback polarity)
     proba = model.predict_proba(texts, [float("nan")] * len(texts))
     names = {0: "not mentioned", LABEL_POS: "positive", LABEL_NEG: "negative"}
     out = []
@@ -202,6 +220,7 @@ def analyse(texts: list[str]) -> list[dict]:
         evidence = {}
         complaints = [a for a, lab in labels.items() if lab == "negative"]
         if complaints:
+            # re-score each sentence alone and keep the most negative one per complained-about aspect
             sents = split_sentences(text) or [text]
             sp = model.predict_proba(sents, [float("nan")] * len(sents))
             for a in complaints:

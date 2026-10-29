@@ -95,6 +95,7 @@ def time_split(feat: pd.DataFrame, gap: int = SPLIT_GAP_MONTHS) -> tuple[pd.Seri
 
 
 def _lgbm(X_tr, y_tr, X_va, y_va):
+    """LightGBM baseline: positives re-weighted by the class imbalance, early stopping on validation PR-AUC."""
     pos = y_tr.mean()
     clf = lgb.LGBMClassifier(n_estimators=600, learning_rate=0.03, num_leaves=31, min_child_samples=40,
                              subsample=0.8, subsample_freq=1, colsample_bytree=0.8, reg_lambda=1.0,
@@ -143,6 +144,7 @@ def early_warning(frame: pd.DataFrame, prob: np.ndarray, threshold: float) -> di
 
 
 def metrics(y: np.ndarray, p: np.ndarray, frame: pd.DataFrame) -> dict:
+    """Ranking, calibration and early-warning metrics for predictions ``p`` against labels ``y``."""
     k = max(1, int(0.10 * len(p)))
     top = np.argsort(-p, kind="stable")[:k]
     thr = np.quantile(p, 1 - ALERT_BUDGET)
@@ -335,6 +337,7 @@ def score(feat: pd.DataFrame, gru, data: SequenceData, background_rows: np.ndarr
 
     # Counterfactual: same GRU, one aspect reset to the market norm
     def predict_fn(frame, rows):
+        """Calibrated GRU risk for a counterfactual frame, standardised with the training statistics."""
         cf_data = SequenceData(frame, ALL_FEATURES, data.mean, data.std)
         return apply_platt(predict(gru, cf_data, rows), calib)
     cf = counterfactual_attribution(feat, latest_rows, latest["risk"].to_numpy(), predict_fn)

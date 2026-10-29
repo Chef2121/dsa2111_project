@@ -29,6 +29,7 @@ from radview.config import (OUTPUTS_DIR, PROCESSED_DIR, RAW_DIR, SOURCE, YELP_CI
 
 
 def _step(name: str):
+    """Print a section banner for pipeline step ``name`` and return its start time."""
     print(f"\n=== {name} " + "=" * max(0, 60 - len(name)))
     return time.time()
 
@@ -54,6 +55,12 @@ def build_trends_and_features() -> dict:
 
 def run(mode: str = "full", fast: bool = False, use_llm: bool | None = None, epochs: int = 2,
         train_size: int = 6000, from_processed: bool = False) -> dict:
+    """Run M1-M5 in order and return the run summary.
+
+    ``mode='full'`` trains and evaluates every model; ``'rescore'`` re-ingests and re-scores with the saved
+    models (no retraining, no paid LLM comparison). outputs/pipeline_run.json is written last, which is
+    the signal for a running API to reload its data.
+    """
     timings = {}
     t = _step(f"M1 ingestion ({SOURCE})")
     if from_processed:

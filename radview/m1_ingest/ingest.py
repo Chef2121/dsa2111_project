@@ -195,6 +195,7 @@ def load_checkins(raw_dir: Path, business_ids: set[str]) -> pd.DataFrame:
 
 
 def load_tips(raw_dir: Path, business_ids: set[str]) -> pd.DataFrame:
+    """Number of Yelp tips per restaurant-month (an empty table if the tip file is missing)."""
     path = raw_dir / TIP_FILE
     if not path.exists():
         return pd.DataFrame(columns=["business_id", "month", "tips"])
@@ -206,6 +207,9 @@ def load_tips(raw_dir: Path, business_ids: set[str]) -> pd.DataFrame:
 
 def run(raw_dir: Path = RAW_DIR, out_dir: Path = PROCESSED_DIR, city: str | None = None,
         max_restaurants: int | None = None, start_date: str | None = None) -> dict:
+    """M1 entry point: select restaurants, stream and clean their reviews, aggregate check-ins and tips, and
+    write the Parquet tables plus a data-quality report. Returns that report.
+    """
     if not (raw_dir / BUSINESS_FILE).exists():
         raise FileNotFoundError(
             f"No Yelp data in {raw_dir}. Place the Yelp Open Dataset JSON files there or run "

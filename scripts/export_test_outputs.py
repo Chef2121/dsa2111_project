@@ -49,26 +49,31 @@ def model_label(r: dict) -> str:
 
 
 def load(name: str):
+    """Parsed JSON input file from the report's inputs directory."""
     return json.loads((INP / name).read_text(encoding="utf-8"))
 
 
 def n(v, fmt="{:.3f}"):
+    """Number formatted with ``fmt``, or a dash for None."""
     if v is None:
         return "–"
     return fmt.format(v) if isinstance(v, (int, float)) else str(v)
 
 
 def pct(v):
+    """Fraction as a one-decimal percentage, or a dash for None."""
     return "–" if v is None else f"{v:.1%}"
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
+    """Markdown table lines for ``header`` and ``rows``."""
     out = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     out += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows]
     return out + [""]
 
 
 def git_commit() -> str:
+    """Short hash of the current git commit ("unknown" outside a repository)."""
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
     except Exception:
@@ -77,6 +82,7 @@ def git_commit() -> str:
 
 # --------------------------------------------------------------------------------------------- sections
 def section_index() -> list[str]:
+    """Section 1: which report table/figure each result comes from and how to regenerate it."""
     rows = [
         ["Dataset after ingestion (M1)", "Table II", "`python -m radview.m1_ingest.ingest`", "`ingest_report.json`"],
         ["Aspect classification (M2)", "Table VIII, Fig. 4", "`python -m radview.m2_aspects.train`", "`m2_evaluation.json`"],
@@ -101,6 +107,7 @@ def section_index() -> list[str]:
 
 
 def section_dataset() -> list[str]:
+    """Section 2: the dataset after ingestion (M1)."""
     r = load("ingest_report.json")
     run = load("pipeline_run.json")
     rows = [["Restaurants", r["restaurants"]], ["Review records read", f"{r['rows_read']:,}"],
@@ -120,6 +127,7 @@ def section_dataset() -> list[str]:
 
 
 def section_m2() -> list[str]:
+    """Section 3: M2 aspect-classification results on every benchmark."""
     m2 = load("m2_evaluation.json")
     out = ["## 3. M2 — aspect-sentiment classification", "",
            f"Selected for production: **{m2['selected_model']}** (by macro-F1 on {m2['selected_on']}). "
@@ -151,6 +159,7 @@ def section_m2() -> list[str]:
 
 
 def section_m3() -> list[str]:
+    """Section 4: M3 complaint-spike detection against the random-timing baseline."""
     m3 = load("m3_evaluation.json")
     rows = [[k.replace("_", " "), pct(v["flag_rate"]), pct(v["precision"]), n(v["lift"], "{:.2f}"),
              v["onsets"], f"{v['onsets_detected_pct']}%", n(v["median_lead_months"], "{:g}")]
@@ -163,6 +172,7 @@ def section_m3() -> list[str]:
 
 
 def _m4_rows(results: dict) -> list[list]:
+    """Table rows (one per forecaster) of the M4 metrics."""
     rows = []
     for k, r in results.items():
         ew = r.get("early_warning") or {}
@@ -177,12 +187,14 @@ M4_HEAD = ["Model", "AUROC", "PR-AUC", "Brier ↓", "P@10%", "R@10%", "Onsets wa
 
 
 def _split(sp: dict) -> str:
+    """One-line description of an M4 train/validation/test split."""
     return (f"Train {sp['train']} ({sp['n_train']:,} restaurant-months) · validation {sp['valid']} "
             f"({sp['n_valid']:,}) · test {sp['test']} ({sp['n_test']:,}); positive rate {pct(sp['pos_rate_train'])} "
             f"train / {pct(sp['pos_rate_test'])} test.")
 
 
 def section_m4() -> list[str]:
+    """Section 5: M4 forecasting results (main test, pre-COVID robustness window and simulator)."""
     m4, pre, syn = load("m4_evaluation.json"), load("m4_evaluation_test_end_2019-12.json"), load("m4_evaluation_synthetic.json")
     out = ["## 5. M4 — rating-decline forecasting", "",
            "Label: next-3-month mean rating ≥ 0.3★ below the trailing 6 months *and* a significant drop (one-sided "
@@ -231,6 +243,7 @@ def section_m4() -> list[str]:
 
 
 def section_m5() -> list[str]:
+    """Section 6: M5 weekly batch and planner comparison."""
     b, c = load("m5_evaluation.json"), load("m5_planner_comparison.json")
     out = ["## 6. M5 — grounded action plans", "",
            "### 6.1 Weekly batch (all at-risk restaurants)", ""]
@@ -268,6 +281,7 @@ def section_m5() -> list[str]:
 
 
 def section_pytest() -> list[str]:
+    """Section 7: run the pytest suite and list every test with its outcome."""
     env = dict(os.environ, PYTHONUTF8="1")
     proc = subprocess.run([sys.executable, "-m", "pytest", "-v", "-rs", "-p", "no:cacheprovider"], cwd=ROOT,
                           capture_output=True, text=True, env=env)
@@ -291,6 +305,7 @@ def section_pytest() -> list[str]:
 
 
 def section_appendix() -> list[str]:
+    """Section 8: the raw JSON result files, collapsed."""
     out = ["## 8. Appendix — raw result files", "",
            "The exact JSON files the tables above were rendered from (training histories included).", ""]
     for f in sorted(INP.glob("*.json")):
@@ -300,6 +315,7 @@ def section_appendix() -> list[str]:
 
 
 def main():
+    """Assemble every section into docs/TEST_OUTPUTS.md."""
     lines = ["# Radview — all test outputs", "",
              f"_Generated by `scripts/export_test_outputs.py` on {datetime.now():%Y-%m-%d %H:%M} at commit "
              f"`{git_commit()}`. Regenerate with `python scripts/export_test_outputs.py`._", "",
