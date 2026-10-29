@@ -23,6 +23,7 @@ YELP_FILES = ["business", "review", "checkin", "tip"]
 
 
 def download_yelp() -> None:
+    """Download the Yelp Open Dataset from Kaggle into data/yelp (needs Kaggle credentials)."""
     from kagglesdk import KaggleClient
     from kagglesdk.datasets.types.dataset_api_service import ApiDownloadDatasetRequest
 
@@ -48,6 +49,7 @@ def download_yelp() -> None:
 
 
 def download_semeval() -> None:
+    """Download the SemEval-2014 restaurant train and test files from the Hugging Face Hub into data/semeval."""
     from huggingface_hub import hf_hub_download
 
     SEMEVAL_DIR.mkdir(parents=True, exist_ok=True)

@@ -37,6 +37,9 @@ class SequenceData:
     """Standardised, left-padded per-business feature sequences."""
 
     def __init__(self, frame: pd.DataFrame, features: list[str], mean: pd.Series, std: pd.Series):
+        """Standardise ``features`` with the training mean/std (NaN -> 0, clipped to +-5), add a padding-flag
+        channel, and store each restaurant's months left-padded so any month's 12-month window is one slice.
+        """
         self.features = features
         self.mean, self.std = mean, std  # training statistics, reused for counterfactual frames
         z = ((frame[features] - mean) / std).fillna(0.0).clip(-5, 5).to_numpy(np.float32)
@@ -61,6 +64,7 @@ class SequenceData:
 
     @property
     def n_inputs(self) -> int:
+        """Number of input channels (features + padding flag)."""
         return self.X.shape[1]
 
     def windows(self, rows: np.ndarray | torch.Tensor) -> torch.Tensor:
@@ -70,7 +74,11 @@ class SequenceData:
 
 
 class DeclineGRU(nn.Module):
+    """Linear projection (GELU, dropout) -> one-layer GRU -> small MLP head on the last hidden state.
+    Outputs one decline logit per window.
+    """
     def __init__(self, n_inputs: int, hidden: int = 64, dropout: float = 0.2):
+        """``n_inputs`` channels in, ``hidden`` units in the projection and the GRU."""
         super().__init__()
         self.proj = nn.Sequential(nn.Linear(n_inputs, hidden), nn.GELU(), nn.Dropout(dropout))
         self.gru = nn.GRU(hidden, hidden, batch_first=True)
@@ -78,11 +86,13 @@ class DeclineGRU(nn.Module):
                                   nn.Dropout(dropout), nn.Linear(hidden // 2, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # x: (B, T, F) -> logits (B, 1)
+        """x of shape (batch, months, channels) -> decline logit (batch, 1) from the final month's hidden state."""
         h, _ = self.gru(self.proj(x))
         return self.head(h[:, -1])
 
 
 def predict(model: DeclineGRU, data: SequenceData, rows: np.ndarray, batch: int = 2048) -> np.ndarray:
+    """Uncalibrated decline probabilities (sigmoid of the logits) for the windows ending at ``rows``."""
     model.eval()
     out = []
     with torch.inference_mode():
@@ -169,10 +179,12 @@ class GRUEnsemble(nn.Module):
     """Average of several GRUs trained with different seeds (lower variance)."""
 
     def __init__(self, models: list[DeclineGRU]):
+        """Wrap the seed models so SHAP and prediction see a single network."""
         super().__init__()
         self.models = nn.ModuleList(models)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Average of the members' logits."""
         return torch.stack([m(x) for m in self.models]).mean(0)
 
 
@@ -191,6 +203,7 @@ def fit_platt(p_valid: np.ndarray, y_valid: np.ndarray) -> tuple[float, float]:
 
 
 def apply_platt(p: np.ndarray, calib: tuple[float, float]) -> np.ndarray:
+    """Platt scaling: sigmoid(a * logit(p) + b), with (a, b) fitted on the validation months."""
     a, b = calib
     logit = np.log(np.clip(p, 1e-6, 1 - 1e-6) / np.clip(1 - p, 1e-6, 1))
     return 1.0 / (1.0 + np.exp(-(a * logit + b)))

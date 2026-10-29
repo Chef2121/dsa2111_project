@@ -13,6 +13,10 @@ from radview.config import ASPECTS, LABEL_NEG, LABEL_POS, PROCESSED_DIR
 
 
 def build_panel(processed_dir=PROCESSED_DIR, save: bool = True) -> pd.DataFrame:
+    """Aggregate reviews and their M2 labels to one row per restaurant-month: review count, star sums (for means
+    and variances), low-star count, and per-aspect complaint and praise counts. Months without reviews are
+    filled in so later rolling windows are true calendar windows.
+    """
     rev = pd.read_parquet(processed_dir / "reviews.parquet")
     asp = pd.read_parquet(processed_dir / "review_aspects.parquet")
     df = rev.merge(asp, on="review_id", how="inner")

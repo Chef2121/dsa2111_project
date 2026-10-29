@@ -67,6 +67,9 @@ def detect_sub_themes(aspect: str, texts: list[str]) -> list[str]:
 
 
 def actions_for(aspect: str, themes: list[str], max_actions: int = 3) -> list[str]:
+    """Up to ``max_actions`` distinct actions for ``aspect``: those for the detected sub-themes first, then
+    the aspect's default actions.
+    """
     book = PLAYBOOK[aspect]
     acts: list[str] = []
     for th in themes:

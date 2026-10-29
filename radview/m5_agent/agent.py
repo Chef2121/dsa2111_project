@@ -57,6 +57,7 @@ EFFORT = {"food": 1.0, "service": 0.8, "cleanliness": 0.6, "price": 0.9, "ambien
 
 
 class PlanState(TypedDict, total=False):
+    """State passed between the LangGraph nodes; each node returns only the keys it changes."""
     business_id: str
     use_llm: bool
     planner_override: str   # "rule_based" | "claude" | "open_model" | "adversarial" (evaluation); default: by use_llm
@@ -79,6 +80,7 @@ class PlanState(TypedDict, total=False):
 # Analytics nodes
 # --------------------------------------------------------------------------
 def gather(state: PlanState) -> PlanState:
+    """Node 1: call the three analytics tools for the restaurant and start the tool-call bookkeeping."""
     bid = state["business_id"]
     calls = [{"tool": t, "args": {}} for t in ("query_metrics", "run_forecast", "compare_peers")]
     return {"metrics": query_metrics(bid), "forecast": run_forecast(bid), "peers": compare_peers(bid),
@@ -123,6 +125,9 @@ def prioritise(state: PlanState) -> PlanState:
 
 
 def retrieve(state: PlanState) -> PlanState:
+    """Node 3: fetch quote-checked evidence for each prioritised aspect and record the retrieved review ids
+    (only these may be cited).
+    """
     bid = state["business_id"]
     evidence = {p["aspect"]: get_evidence_reviews(bid, p["aspect"]) for p in state["priorities"]}
     ids = sorted({e["review_id"] for ev in evidence.values() for e in ev})
@@ -150,6 +155,7 @@ class RuleBasedPlanner:
     name = "rule_based"
 
     def draft(self, state: PlanState) -> tuple[dict, dict]:
+        """Template claims built from exactly the tool figures and evidence quotes, plus playbook actions."""
         items = []
         for p in state["priorities"]:
             a = p["aspect"]
@@ -238,12 +244,16 @@ class ClaudePlanner:
     name = "claude"
 
     def __init__(self, model: str = LLM_MODEL):
+        """Anthropic client for ``model`` (needs ANTHROPIC_API_KEY)."""
         import anthropic
 
         self.client = anthropic.Anthropic()
         self.model = model
 
     def draft(self, state: PlanState) -> tuple[dict | None, dict]:
+        """Tool-calling loop: the model calls analytics tools until it submits a plan through ``submit_plan``.
+        Returns (plan or None, bookkeeping with token usage, retrieved review ids and tool calls).
+        """
         bid = state["business_id"]
         messages: list[dict] = [{"role": "user", "content": _brief(state)}]
         tools = TOOL_SCHEMAS + [SUBMIT_PLAN_TOOL]
@@ -291,9 +301,11 @@ class OpenModelPlanner:
     name = "open_model"
 
     def __init__(self, model: str = OPEN_LLM_MODEL, base_url: str = OPEN_LLM_URL):
+        """Model name and OpenAI-compatible endpoint (a local Ollama server by default)."""
         self.model, self.base_url = model, base_url
 
     def draft(self, state: PlanState) -> tuple[dict | None, dict]:
+        """The same loop as ``ClaudePlanner.draft`` over the OpenAI-compatible chat API."""
         bid = state["business_id"]
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT},
                                 {"role": "user", "content": _brief(state)}]
@@ -302,6 +314,7 @@ class OpenModelPlanner:
         usage = {"model": self.model, "input_tokens": 0, "output_tokens": 0, "turns": 0, "retries": 0}
 
         def done(plan: dict) -> tuple[dict, dict]:
+            """Package a submitted plan (format slips repaired) with this run's bookkeeping."""
             return open_llm.normalise_plan(plan), {"usage": usage, "retrieved": retrieved, "calls": calls}
 
         for _ in range(MAX_TOOL_TURNS):
@@ -358,6 +371,9 @@ def llm_configured() -> bool:
 # Draft / verify / finalise nodes
 # --------------------------------------------------------------------------
 def draft(state: PlanState) -> PlanState:
+    """Node 4: draft a plan with the adversarial, LLM or rule-based planner (rule-based if the LLM fails),
+    keep only prioritised aspects and attach the figures the verifier checks against.
+    """
     plan, extra, planner = None, {}, "rule_based"
     if state.get("planner_override") == "adversarial":
         from radview.m5_agent.adversarial import HallucinatingPlanner
@@ -392,6 +408,7 @@ def draft(state: PlanState) -> PlanState:
 
 
 def verify(state: PlanState) -> PlanState:
+    """Node 5: verify a JSON copy of the draft; failing claims become feedback for a redraft."""
     checked = verify_plan(json.loads(json.dumps(state["draft_plan"], default=str)),
                           retrieved_ids=set(state["retrieved_ids"]))
     failures = [f"[{it['aspect']}] {c['text'][:80]}... -> {'; '.join(c['reasons'])}"
@@ -400,17 +417,22 @@ def verify(state: PlanState) -> PlanState:
 
 
 def route_after_verify(state: PlanState) -> str:
+    """Redraft if an LLM planner produced failing claims and attempts remain; otherwise finalise."""
     if state.get("feedback") and state.get("planner") in LLM_PLANNERS and state["attempts"] < MAX_ATTEMPTS:
         return "draft"
     return "finalise"
 
 
 def _default_headline(p: dict) -> str:
+    """Fallback headline from the trend direction and spike flag only (it contains no figure to verify)."""
     trend = "rising" if p["change"] > 0.02 else "persistent"
     return f"{p['aspect'].capitalize()} complaints are {trend}" + (" (unusual spike)" if p["spike"] else "")
 
 
 def finalise(state: PlanState) -> PlanState:
+    """Node 6: keep verified claims, drop items without verified review evidence, check the figures in the
+    summary and headlines, rank the items and assemble the plan shown to the owner.
+    """
     d, fc = state["draft_plan"], state["forecast"]
     pri = {p["aspect"]: p for p in state["priorities"]}
     biz = STORE.businesses.loc[state["business_id"]]
@@ -418,6 +440,7 @@ def finalise(state: PlanState) -> PlanState:
     text_rejections = []  # free text (summary, headlines) is shown to the owner too, so its figures are checked
 
     def checked_text(kind: str, aspect: str, text: str, fallback: str) -> str:
+        """``text`` if every figure in it was returned by a tool; otherwise log the rejection and use ``fallback``."""
         bad = unsupported_text_figures(text, all_metrics, fc.get("risk_lift"))
         if bad:
             text_rejections.append({"aspect": aspect, "text": f"[{kind}] {text}",
@@ -467,6 +490,7 @@ def finalise(state: PlanState) -> PlanState:
 
 
 def build_graph():
+    """Wire the nodes: gather -> prioritise -> retrieve -> draft -> verify -> (redraft | finalise)."""
     g = StateGraph(PlanState)
     for name, fn in (("gather", gather), ("prioritise", prioritise), ("retrieve", retrieve), ("draft", draft),
                      ("verify", verify), ("finalise", finalise)):

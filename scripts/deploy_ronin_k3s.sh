@@ -9,9 +9,14 @@
 # Safe to re-run (e.g. after `git pull`): it rebuilds the image, re-applies the manifests and restarts the pods.
 # The trained models are copied onto the Kubernetes volume only if the volume does not have them yet, so
 # feedback and refreshed plans written by the running app are kept.
+#
+# To replace the models with a newer bundle (e.g. after retraining), set UPDATE_MODELS=1:
+#   UPDATE_MODELS=1 BUNDLE=~/Radview-trained-models-yelp-v2.zip bash scripts/deploy_ronin_k3s.sh
+# The volume's current contents are moved to a dated backup folder next to it, never deleted.
 set -euo pipefail
 
 BUNDLE="${BUNDLE:-$HOME/Radview-trained-models-yelp.zip}"
+UPDATE_MODELS="${UPDATE_MODELS:-0}"
 cd "$(dirname "$0")/.."
 
 echo "== 1/6 Docker"
@@ -26,7 +31,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 echo "== 2/6 Trained models"
-if [ ! -f data/work/yelp/outputs/risk_latest.parquet ]; then
+if [ "$UPDATE_MODELS" = 1 ] || [ ! -f data/work/yelp/outputs/risk_latest.parquet ]; then
   [ -f "$BUNDLE" ] || { echo "ERROR: $BUNDLE not found - copy the trained-models zip to the machine first"; exit 1; }
   command -v unzip >/dev/null || sudo apt-get install -y unzip
   unzip -q -o "$BUNDLE" -d .
@@ -58,6 +63,12 @@ for _ in $(seq 1 60); do
 done
 PV=$(kubectl -n radview get pvc radview-data -o jsonpath='{.spec.volumeName}')
 VOL=$(kubectl get pv "$PV" -o jsonpath='{.spec.hostPath.path}{.spec.local.path}')
+if [ "$UPDATE_MODELS" = 1 ] && sudo test -f "$VOL/work/yelp/outputs/risk_latest.parquet"; then
+  BACKUP="$(dirname "$VOL")/radview-data-backup-$(date +%Y%m%d-%H%M%S)"
+  echo "UPDATE_MODELS=1: moving the current volume contents to $BACKUP"
+  sudo mkdir -p "$BACKUP"
+  sudo find "$VOL" -mindepth 1 -maxdepth 1 -exec mv -t "$BACKUP" {} +
+fi
 if ! sudo test -f "$VOL/work/yelp/outputs/risk_latest.parquet"; then
   echo "Copying the trained models onto the volume ($VOL)"
   sudo cp -a data/. "$VOL"/

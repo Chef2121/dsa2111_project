@@ -20,10 +20,12 @@ M4_MODELS = ["majority", "current_negativity", "rating_logreg", "rating_lgbm", "
 
 
 def _json(path: Path):
+    """Parsed JSON file, or {} if it does not exist."""
     return json.loads(path.read_text()) if path.exists() else {}
 
 
 def summarise(data_dir: Path) -> dict[str, str]:
+    """Headline results of one restaurant selection (data directory) as label -> formatted value."""
     work = data_dir / "work" / "yelp"
     out, proc = work / "outputs", work / "processed"
     biz = pd.read_parquet(proc / "businesses.parquet")
@@ -65,6 +67,7 @@ def summarise(data_dir: Path) -> dict[str, str]:
 
 
 def main() -> None:
+    """Print or write the side-by-side comparison of the main and robustness selections."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--main", type=Path, default=Path("data"))
     ap.add_argument("--robust", type=Path, default=Path("data_select2016"))

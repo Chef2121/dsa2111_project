@@ -39,10 +39,12 @@ ALL_FEATURES = SENTIMENT_FEATURES + ASPECT_FEATURES + ["n_spiking_aspects"]
 
 
 def _roll(g, col, w):
+    """Per-restaurant rolling sum of ``col`` over the last ``w`` months (fewer at the start of a history)."""
     return g[col].transform(lambda s: s.rolling(w, min_periods=1).sum())
 
 
 def _slope(y: np.ndarray) -> float:
+    """Least-squares slope of ``y`` against its index, ignoring NaNs; 0 when fewer than 3 points."""
     m = ~np.isnan(y)
     if m.sum() < 3:
         return 0.0
@@ -57,6 +59,7 @@ def build_features(panel: pd.DataFrame, trends: pd.DataFrame, cities: pd.Series 
     f = p[["business_id", "month"]].copy()
 
     def win(col, w):
+        """``w``-month rolling sum of ``col`` within each restaurant."""
         return _roll(g, col, w)
 
     n1, n3, n6 = p["n_reviews"], win("n_reviews", 3), win("n_reviews", REFERENCE_MONTHS)
@@ -103,6 +106,7 @@ def build_features(panel: pd.DataFrame, trends: pd.DataFrame, cities: pd.Series 
     keys = [market, f["month"]]
 
     def market_median(col):
+        """Median of ``col`` over the restaurants active in the same market and month: the 'typical restaurant'."""
         return f[col].where(active).groupby(keys).transform("median")
 
     f["market_rating_3m"] = market_median("rating_3m")
@@ -113,6 +117,7 @@ def build_features(panel: pd.DataFrame, trends: pd.DataFrame, cities: pd.Series 
 
     # ---------------- forward-looking label ---------------------------------
     def fwd(col):  # sum over months t+1 .. t+HORIZON
+        """Sum of ``col`` over months t+1..t+HORIZON_MONTHS (NaN if fewer remain); used only for the label."""
         return g[col].transform(lambda s: s[::-1].rolling(HORIZON_MONTHS, min_periods=HORIZON_MONTHS).sum()[::-1].shift(-1))
 
     n_fut, s_fut, ss_fut = fwd("n_reviews"), fwd("sum_stars"), fwd("sumsq_stars")

@@ -19,6 +19,9 @@ from radview.m1_ingest.ingest import BUSINESS_FILE
 
 
 def summarise(raw_dir=RAW_DIR, top: int = 15) -> pd.DataFrame:
+    """Restaurants and reviews per city from the business file only: a fast preflight to choose which city
+    (slice) to ingest.
+    """
     rows = []
     with open(raw_dir / BUSINESS_FILE, encoding="utf-8") as fh:
         for line in fh:

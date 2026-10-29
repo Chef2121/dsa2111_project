@@ -22,6 +22,9 @@ from radview.m5_agent.tools import STORE
 
 
 def compare(n: int) -> dict:
+    """Run every available planner (rule-based, adversarial, and the configured LLM) on the ``n`` riskiest
+    restaurants and summarise groundedness, failures per verifier axis, latency, tool calls and tokens.
+    """
     targets = at_risk_restaurants()[:n] or list(STORE.risk_latest.sort_values("risk", ascending=False).index[:n])
     llm = ["open_model"] if LLM_PROVIDER == "open" else (["claude"] if os.getenv("ANTHROPIC_API_KEY") else [])
     planners = ["rule_based", "adversarial"] + llm

@@ -93,7 +93,10 @@ The script:
 6. checks the dashboard and the API health and prints the data source (should say `yelp`).
 
 The first build takes ~10–15 minutes (PyTorch and DistilBERT downloads); later builds are cached.
-To deploy a newer version later: `git pull && bash scripts/deploy_ronin_k3s.sh`.
+To deploy a newer version later: `git pull && bash scripts/deploy_ronin_k3s.sh`. This updates the code only;
+the models already on the volume are kept. To also load a newer trained-models zip, copy it to the machine and run
+`UPDATE_MODELS=1 BUNDLE=~/Radview-trained-models-yelp-v2.zip bash scripts/deploy_ronin_k3s.sh` (the old volume
+contents are moved to a dated `radview-data-backup-*` folder next to the volume, not deleted).
 
 The training **Job** and weekly re-scoring **CronJob** in `k8s/10-pipeline-jobs.yaml` are deliberately **not**
 applied on RONIN: the Job would retrain everything for ~2 hours and overwrite the trained models, and the

@@ -31,6 +31,7 @@ class Store:
     _stamp: float | None = None
 
     def refresh_if_changed(self) -> bool:
+        """Drop every cached table if pipeline_run.json changed since the last load; True if it did."""
         marker = OUTPUTS_DIR / "pipeline_run.json"
         stamp = marker.stat().st_mtime if marker.exists() else None
         if stamp == self._stamp:
@@ -43,43 +44,53 @@ class Store:
 
     @cached_property
     def businesses(self) -> pd.DataFrame:
+        """Restaurants selected by M1, indexed by business_id."""
         return pd.read_parquet(PROCESSED_DIR / "businesses.parquet").set_index("business_id")
 
     @cached_property
     def reviews(self) -> pd.DataFrame:
+        """Reviews joined with their M2 labels and probabilities, indexed by review_id."""
         rev = pd.read_parquet(PROCESSED_DIR / "reviews.parquet")
         asp = pd.read_parquet(PROCESSED_DIR / "review_aspects.parquet")
         return rev.merge(asp, on="review_id").set_index("review_id", drop=False)
 
     @cached_property
     def reviews_by_business(self) -> dict[str, np.ndarray]:
+        """Row positions of each restaurant's reviews, for fast per-restaurant lookup."""
         return self.reviews.groupby("business_id").indices
 
     @cached_property
     def panel(self) -> pd.DataFrame:
+        """Monthly restaurant panel (see radview.panel)."""
         return pd.read_parquet(PROCESSED_DIR / "panel_monthly.parquet")
 
     @cached_property
     def trends(self) -> pd.DataFrame:
+        """M3 complaint rates, z-scores and spike flags per restaurant-month."""
         return pd.read_parquet(PROCESSED_DIR / "aspect_trends.parquet")
 
     @cached_property
     def features(self) -> pd.DataFrame:
+        """M4 feature table, one row per restaurant-month."""
         return pd.read_parquet(PROCESSED_DIR / "features.parquet")
 
     @cached_property
     def risk_latest(self) -> pd.DataFrame:
+        """Latest risk, tier and explanations per restaurant (M4), indexed by business_id."""
         return pd.read_parquet(OUTPUTS_DIR / "risk_latest.parquet").set_index("business_id")
 
     @cached_property
     def risk_history(self) -> pd.DataFrame:
+        """Predicted risk for every restaurant-month (M4)."""
         return pd.read_parquet(OUTPUTS_DIR / "risk_history.parquet")
 
     @cached_property
     def latest_month(self) -> str:
+        """Most recent complete month in the data (YYYY-MM)."""
         return str(self.features["month"].max())
 
     def business_reviews(self, business_id: str) -> pd.DataFrame:
+        """All reviews of one restaurant (an empty frame if it has none)."""
         idx = self.reviews_by_business.get(business_id)
         return self.reviews.iloc[idx] if idx is not None else self.reviews.iloc[0:0]
 
@@ -88,6 +99,7 @@ STORE = Store()
 
 
 def _month_offset(month: str, k: int) -> str:
+    """``month`` (YYYY-MM) shifted by ``k`` months."""
     return str(pd.Period(month, "M") + k)
 
 
@@ -131,6 +143,7 @@ def run_forecast(business_id: str, store: Store = STORE) -> dict:
     r = store.risk_latest.loc[business_id]
 
     def group(prefix):
+        """Columns of the risk row starting with ``prefix``, keyed by the name after '::'."""
         return {c.split("::", 1)[1]: round(float(r[c]), 4) for c in r.index if c.startswith(prefix)}
     return {"business_id": business_id, "month": r["month"], "risk": round(float(r["risk"]), 4),
             "risk_level": r["risk_level"], "base_rate": round(float(r["base_rate"]), 4),
