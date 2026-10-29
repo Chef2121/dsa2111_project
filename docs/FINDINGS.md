@@ -63,6 +63,10 @@ baselines, M2 chosen on a dev set); see [GPU_RERUN.md](GPU_RERUN.md) for what ch
    uncheckable one** and 8 metric claims stated no figure at all. The earlier run's 69% was measured with the
    looser verifier, which accepted any matching number. This is the strongest evidence that the verifier is
    needed — it removed every unsupported claim before the owner saw it.
+   The cost shows on five well-reviewed restaurants we checked by hand: only 5 of Qwen's 11 claims passed, two
+   plans were left with no evidence, and for one restaurant Qwen produced no usable plan (the agent fell back to the
+   rule-based planner). So a usefulness rating study should show rule-based plans only; owners' ratings are left
+   for future work.
 6. **Risk is low in absolute terms.** Declines are rare (~6% of restaurant-months) and calibrated risks top out
    around 21–23%, which is why risk tiers are defined as *lift* over the typical restaurant — the mean predicted
    risk of the active restaurants in the latest month (5.4%) — with ≥1.5× medium and ≥2× high: 41 high and 21
