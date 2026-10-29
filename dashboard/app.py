@@ -592,9 +592,13 @@ def page_analyse():
     header("Try a review", "Paste one review per line. The production aspect model (M2) labels each aspect and "
                            "highlights the sentence that carries each complaint, the same check the agent's verifier uses.")
     with card("analyse-input"):
-        text = st.text_area("Reviews", height=140, label_visibility="collapsed", value=(
-            "The pasta was cold and the sauce tasted like it came from a jar. Our server was friendly though.\n"
-            "Lovely patio and great prices, but the bathroom was filthy."))
+        # one clear issue per review: the model reads whole reviews, and in mixed ones it can drag a praised aspect
+        # negative too, so the live example sticks to cases it handles reliably
+        text = st.text_area("Reviews", height=150, label_visibility="collapsed", value=(
+            "We waited 40 minutes to be seated and the host was rude about it.\n"
+            "The restroom was filthy and smelled bad. We left before ordering.\n"
+            "Way too expensive for what you get.\n"
+            "Lovely patio with a cozy atmosphere. Our server was friendly and attentive all night."))
         go = st.button("Analyse", type="primary", icon=":material/arrow_forward:")
     if go:
         texts = [t.strip() for t in text.splitlines() if t.strip()][:50]
