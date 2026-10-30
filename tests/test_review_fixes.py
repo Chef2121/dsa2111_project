@@ -11,6 +11,7 @@ from radview.config import ASPECTS, HORIZON_MONTHS, LABEL_NEG, LABEL_NONE, LABEL
 
 # ---------------------------------------------------------------- M1
 def test_cuisine_skips_venue_and_drink_tags():
+    """A restaurant's cuisine is its most common food category; venue and drink tags (Nightlife, Bars) are skipped."""
     from radview.m1_ingest.ingest import assign_cuisine
 
     cats = pd.Series(["Nightlife, Bars, Middle Eastern, Restaurants",
@@ -21,6 +22,7 @@ def test_cuisine_skips_venue_and_drink_tags():
 
 
 def test_early_selection_counts_only_the_first_year(tmp_path):
+    """The survivor-free selection counts only the selected restaurants' reviews from the study's first year."""
     from radview.m1_ingest.ingest import REVIEW_FILE, early_review_counts
 
     rows = [("a", "2016-03-01"), ("a", "2016-11-30"), ("a", "2018-01-01"), ("b", "2017-02-01"), ("c", "2016-05-05")]
@@ -32,9 +34,13 @@ def test_early_selection_counts_only_the_first_year(tmp_path):
 
 # ---------------------------------------------------------------- M2 weak labels
 def test_idioms_and_negation_breakers():
+    """Idioms such as 'can't wait to come back' and 'worth the wait' are not service mentions, 'nothing but great'
+    is praise and 'not good' is a complaint.
+    """
     from radview.lexicon import ASPECT_TERMS, aspect_tokens, sentence_polarity, tokenize
 
     def aspects(s):
+        """Aspects whose seed terms appear in sentence ``s``."""
         return [a for a in ASPECTS if set(aspect_tokens(s)) & ASPECT_TERMS[a]]
 
     assert aspects("I can't wait to come back!") == []
@@ -45,6 +51,7 @@ def test_idioms_and_negation_breakers():
 
 
 def test_three_star_reviews_do_not_lend_polarity():
+    """Only 1-2 and 4-5 star reviews lend polarity to opinion-less sentences; a mixed 3-star review gives none."""
     from radview.m2_aspects.weak_labels import label_review
 
     neutral_words = "The service tonight."          # aspect word, no sentiment word
@@ -55,6 +62,9 @@ def test_three_star_reviews_do_not_lend_polarity():
 
 # ---------------------------------------------------------------- M3
 def test_baseline_is_the_true_median_and_mad_of_past_months():
+    """The M3 baseline is exactly the median and median absolute deviation of the previous months, and undefined
+    before six months of history.
+    """
     from radview.m3_trends.detector import _baseline
 
     v = np.array([0.1, 0.3, 0.2, 0.5, 0.1, 0.4, 0.9, 0.2])
@@ -67,6 +77,9 @@ def test_baseline_is_the_true_median_and_mad_of_past_months():
 
 
 def test_m3_evaluation_reports_a_random_timing_baseline():
+    """M3 evaluation reports a random-timing chance level (lift near 1 for random flags) and the lasting-drop
+    metric.
+    """
     from radview.m3_trends.detector import evaluate
 
     rng = np.random.default_rng(0)
@@ -87,11 +100,15 @@ def test_m3_evaluation_reports_a_random_timing_baseline():
 
 # ---------------------------------------------------------------- M4
 def _labelled_frame(n_months: int = 48) -> pd.DataFrame:
+    """A 48-month, one-restaurant frame with a decline label every seventh month."""
     months = [str(pd.Period("2016-01", "M") + i) for i in range(n_months)]
     return pd.DataFrame({"business_id": "b", "month": months, "decline": [float(i % 7 == 0) for i in range(n_months)]})
 
 
 def test_split_purges_months_whose_label_reaches_the_next_period():
+    """The time split leaves a three-month gap before validation and test, so no training label is computed from a
+    later period.
+    """
     from radview.m4_forecast.train import time_split
 
     feat = _labelled_frame()
@@ -106,6 +123,9 @@ def test_split_purges_months_whose_label_reaches_the_next_period():
 
 
 def test_early_warning_counts_calendar_months_and_reports_chance():
+    """Early warning measures lead time in calendar months (missing labels do not shorten it) and reports the
+    chance level of random alerts.
+    """
     from radview.m4_forecast.train import early_warning
 
     # one business; onset at 2020-06 (0 in 2020-05, 1 in 2020-06); a label is missing in 2020-03
@@ -119,6 +139,7 @@ def test_early_warning_counts_calendar_months_and_reports_chance():
 
 
 def test_star_impact_never_rewards_complaints():
+    """The star-cost model never gives complaints a positive effect, even when the data contain a spurious one."""
     from radview.m4_forecast.attribution import fit_star_impact
 
     rng = np.random.default_rng(2)
@@ -132,7 +153,9 @@ def test_star_impact_never_rewards_complaints():
 
 # ---------------------------------------------------------------- M5 verifier
 class _Store:
+    """One review of restaurant b1, labelled a service complaint."""
     def __init__(self):
+        """Build the reviews table the verifier reads."""
         self.reviews = pd.DataFrame(
             {"business_id": ["b1"], "text": ["Our server was rude and ignored us."],
              **{f"{a}_label": [LABEL_NEG if a == "service" else 0] for a in ASPECTS}}, index=["r1"])
@@ -144,6 +167,7 @@ METRICS = {"rates": {"complaint_rate_3m": 0.12, "complaint_rate_prev6m": 0.05, "
 
 
 def _check(monkeypatch, claim):
+    """Verify ``claim`` for b1's service aspect against METRICS, treating only sentences with 'rude' as complaints."""
     import radview.m5_agent.verifier as ver
 
     monkeypatch.setattr(ver, "is_complaint", lambda sent, aspect: "rude" in sent)
@@ -151,6 +175,9 @@ def _check(monkeypatch, claim):
 
 
 def test_verifier_accepts_the_rule_based_wording(monkeypatch):
+    """The rule-based planner's exact sentences pass, including the market median and the decline risk in the right
+    clauses.
+    """
     text = ("12 of 100 reviews in the last 3 months (12%) complained about service, versus 5% in the six months "
             "before; the typical restaurant in your market sits at 20%.")
     assert _check(monkeypatch, {"type": "metric", "text": text})["verified"]
@@ -160,6 +187,9 @@ def test_verifier_accepts_the_rule_based_wording(monkeypatch):
 
 
 def test_verifier_rejects_real_figures_attached_to_the_wrong_quantity(monkeypatch):
+    """Real figures attached to the wrong quantity (market median, risk or rating used as something else) fail the
+    statistic check.
+    """
     for text in ("20% of your reviews complain about service.",       # market median as own rate
                  "9% of your reviews complain about service.",        # decline risk as complaint rate
                  "Service problems are costing you 3.88 stars."):     # current rating as star cost
@@ -167,6 +197,9 @@ def test_verifier_rejects_real_figures_attached_to_the_wrong_quantity(monkeypatc
 
 
 def test_verifier_rejects_empty_quotes_and_multipliers(monkeypatch):
+    """A review claim without a quote fails the quotation check, and an uncheckable multiplier such as 'tripled'
+    fails the statistic check.
+    """
     no_quote = {"type": "review", "text": "A guest found a cockroach in the soup.", "review_ids": ["r1"], "quote": ""}
     assert "quotation" in _check(monkeypatch, no_quote)["failed_axes"]
     quote = "Our server was rude and ignored us."
@@ -176,6 +209,7 @@ def test_verifier_rejects_empty_quotes_and_multipliers(monkeypatch):
 
 
 def test_free_text_figures_are_checked():
+    """Figures in summaries and headlines must match a returned value; the risk lift may appear as a multiplier."""
     from radview.m5_agent.verifier import unsupported_text_figures
 
     assert unsupported_text_figures("Risk is 9%, 1.6x the typical restaurant.", [METRICS], 1.6) == []
@@ -184,6 +218,9 @@ def test_free_text_figures_are_checked():
 
 # ---------------------------------------------------------------- M6 cache
 def test_store_reloads_after_a_new_pipeline_run(tmp_path, monkeypatch):
+    """The service cache reloads only when pipeline_run.json changes, so a long-running API picks up a rescore
+    without a restart.
+    """
     import os
 
     from radview.m5_agent import tools

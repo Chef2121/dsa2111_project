@@ -12,6 +12,9 @@ from radview.config import ASPECTS, LABEL_NEG, LABEL_NONE, LABEL_POS
 
 # ---------------------------------------------------------------- lexicon / M2 weak labels
 def test_weak_labels_use_sentence_polarity_and_negation():
+    """The weak labeller judges each sentence separately (one review can praise the food and criticise the service)
+    and flips polarity under negation.
+    """
     from radview.m2_aspects.weak_labels import label_review
 
     lab = label_review("The food was delicious. Our server was rude and slow.", stars=3)
@@ -24,6 +27,7 @@ def test_weak_labels_use_sentence_polarity_and_negation():
 
 
 def test_weak_labels_fall_back_to_stars_only_when_known():
+    """An opinion-less sentence takes its polarity from the star rating, but only when the rating is known."""
     from radview.m2_aspects.weak_labels import label_review
 
     text = "We tried the pasta."
@@ -33,6 +37,9 @@ def test_weak_labels_fall_back_to_stars_only_when_known():
 
 
 def test_generic_words_are_not_aspect_terms():
+    """Generic words such as 'ordered' or 'dinner' trigger no aspect (they used to copy the star rating onto
+    neutral sentences).
+    """
     from radview.m2_aspects.weak_labels import label_review
 
     lab = label_review("Ordered dinner here for my birthday.", stars=1)
@@ -42,6 +49,7 @@ def test_generic_words_are_not_aspect_terms():
 # ---------------------------------------------------------------- M1 ingestion
 @pytest.fixture(scope="module")
 def tiny_dataset(tmp_path_factory):
+    """Ingest a six-restaurant synthetic dataset once for the M1 tests."""
     from radview.m1_ingest.ingest import run as ingest
     from radview.m1_ingest.synthetic import generate
 
@@ -53,6 +61,9 @@ def tiny_dataset(tmp_path_factory):
 
 
 def test_ingest_filters_restaurants_and_deduplicates(tiny_dataset):
+    """M1 keeps only restaurants, drops duplicate reviews (by id and by user, business and text) and writes YYYY-MM
+    months.
+    """
     raw, out, report = tiny_dataset
     biz = pd.read_parquet(out / "businesses.parquet")
     rev = pd.read_parquet(out / "reviews.parquet")
@@ -66,6 +77,7 @@ def test_ingest_filters_restaurants_and_deduplicates(tiny_dataset):
 
 # ---------------------------------------------------------------- M3 detector
 def _panel(rates: list[float], n: int = 20) -> pd.DataFrame:
+    """A one-restaurant monthly panel with the given service complaint rate per month (other aspects constant)."""
     rows = []
     for i, r in enumerate(rates):
         row = {"business_id": "b1", "month": str(pd.Period("2020-01", "M") + i), "n_reviews": n,
@@ -77,6 +89,9 @@ def _panel(rates: list[float], n: int = 20) -> pd.DataFrame:
 
 
 def test_detector_flags_a_sudden_complaint_spike_only_after_it_happens(monkeypatch, tmp_path):
+    """M3 raises no alarm on a stable history, flags the month the service complaint rate jumps, and leaves other
+    aspects alone.
+    """
     import radview.m3_trends.detector as det
 
     monkeypatch.setattr(det, "PROCESSED_DIR", tmp_path)
@@ -94,6 +109,9 @@ def test_features_do_not_leak_future_data():
     from radview.m4_forecast.features import ALL_FEATURES, build_features
 
     def panel(future_star: float):
+        """A panel whose ratings from month 15 on are ``future_star``: only the future differs between the two
+        versions.
+        """
         p = _panel([0.1] * 18)
         p["sumsq_stars"] = 16.0 * p["n_reviews"]
         for a in ASPECTS:
@@ -113,6 +131,9 @@ def test_features_do_not_leak_future_data():
 
 
 def test_sequence_windows_are_left_padded_per_business():
+    """GRU input windows are left-padded with a padding flag, and one restaurant's window never includes another
+    restaurant's months.
+    """
     from radview.m4_forecast.model import SEQ_LEN, SequenceData
 
     frame = pd.DataFrame({"business_id": ["a"] * 3 + ["b"] * 2, "x": [1.0, 2, 3, 10, 20]})
@@ -125,6 +146,7 @@ def test_sequence_windows_are_left_padded_per_business():
 
 
 def test_platt_calibration_is_monotone():
+    """Platt scaling keeps the ranking (monotone) and pulls over-confident scores down."""
     from radview.m4_forecast.model import apply_platt, fit_platt
 
     rng = np.random.default_rng(0)
@@ -138,7 +160,9 @@ def test_platt_calibration_is_monotone():
 
 # ---------------------------------------------------------------- M5 verifier
 class _FakeStore:
+    """Two reviews of two restaurants, the first labelled a service complaint, standing in for the real store."""
     def __init__(self):
+        """Build the reviews table the verifier reads."""
         self.reviews = pd.DataFrame(
             {"business_id": ["b1", "b2"], "text": ["Great pasta. Our server was rude and ignored us.", "Lovely."],
              **{f"{a}_label": [LABEL_NEG if a == "service" else 0, 0] for a in ASPECTS}},
@@ -146,6 +170,9 @@ class _FakeStore:
 
 
 def test_verifier_accepts_grounded_and_rejects_ungrounded_claims(monkeypatch):
+    """A claim with a real, verbatim, relevant quote passes; an invented quote, another restaurant's review, praise
+    passed off as a complaint and an unsupported figure all fail.
+    """
     import radview.m5_agent.verifier as ver
 
     monkeypatch.setattr(ver, "is_complaint", lambda sent, aspect: "rude" in sent)
@@ -168,6 +195,9 @@ def test_verifier_accepts_grounded_and_rejects_ungrounded_claims(monkeypatch):
 
 
 def test_verifier_checks_star_figures_substance_and_retrieval(monkeypatch):
+    """Star figures must match the star cost, metric claims need a figure, cited reviews must have been retrieved,
+    and figures inside a quote do not count as support.
+    """
     import radview.m5_agent.verifier as ver
 
     monkeypatch.setattr(ver, "is_complaint", lambda sent, aspect: "rude" in sent)
@@ -175,6 +205,7 @@ def test_verifier_checks_star_figures_substance_and_retrieval(monkeypatch):
     metrics = {"rates": {"complaint_rate_3m": 0.25}, "stars": {"star_cost": 0.12}}
 
     def check(claim, retrieved=None):
+        """Verify ``claim`` for restaurant b1's service aspect, optionally against the set of retrieved review ids."""
         return ver.verify_claim(claim, "b1", "service", metrics, store, retrieved)
 
     assert check({"type": "metric", "text": "This costs about 0.12 stars."})["verified"]
@@ -189,6 +220,9 @@ def test_verifier_checks_star_figures_substance_and_retrieval(monkeypatch):
 
 
 def test_playbook_actions_follow_detected_sub_themes():
+    """Complaints about waiting are recognised as the 'wait times' theme and give staffing actions (at most three,
+    JSON-serialisable).
+    """
     from radview.m5_agent.playbook import actions_for, detect_sub_themes
 
     themes = detect_sub_themes("service", ["We waited 45 minutes.", "Service was painfully slow."])
@@ -200,6 +234,9 @@ def test_playbook_actions_follow_detected_sub_themes():
 
 # ---------------------------------------------------------------- M4 attribution
 def test_star_impact_recovers_a_known_cost():
+    """The star-cost ridge regression recovers the costs built into synthetic data (cleanliness costs more than
+    price; food about zero).
+    """
     from radview.m4_forecast.attribution import fit_star_impact
 
     rng = np.random.default_rng(1)
@@ -213,6 +250,7 @@ def test_star_impact_recovers_a_known_cost():
 
 
 def test_typical_aspect_frame_resets_only_that_aspect():
+    """The counterfactual frame moves one aspect to the market norm and leaves the other aspects unchanged."""
     from radview.m4_forecast.attribution import typical_aspect_frame
 
     feat = pd.DataFrame({f"{a}_{s}": [0.4] for a in ASPECTS
@@ -227,6 +265,9 @@ def test_typical_aspect_frame_resets_only_that_aspect():
 
 # ---------------------------------------------------------------- M5 open-model client
 def test_open_llm_helpers_repair_format_not_content():
+    """The open-model helpers fix formatting slips (arguments sent as strings, a plan written as text, single
+    values instead of lists) but drop unknown aspects rather than invent content.
+    """
     from radview.m5_agent.open_llm import normalise_plan, parse_arguments, plan_from_text, to_openai_tools
 
     schema = {"type": "object", "properties": {}}
@@ -256,16 +297,22 @@ def test_open_llm_helpers_repair_format_not_content():
 
 # ---------------------------------------------------------------- M2 zero-shot baseline with the open model
 class _ChatReply:
+    """Stand-in for a plain chat-completion response from the open-model server."""
     ok, status_code, text = True, 200, ""
 
     def __init__(self, content):
+        """Store the reply text."""
         self.content = content
 
     def json(self):
+        """Return the reply in the OpenAI chat format."""
         return {"choices": [{"message": {"role": "assistant", "content": self.content}}]}
 
 
 def test_zero_shot_open_model_parses_labels_and_counts_failures(monkeypatch):
+    """The zero-shot LLM baseline reads labels from a reply that mixes prose and JSON, treats missing or unreadable
+    answers as 'none', counts parse failures and uses plain greedy chat.
+    """
     from radview.m2_aspects.models import ZeroShotLLMModel
     from radview.m5_agent import open_llm
 
@@ -273,6 +320,7 @@ def test_zero_shot_open_model_parses_labels_and_counts_failures(monkeypatch):
     sent = []
 
     def fake_post(url, **kw):
+        """Record the request and return the next scripted reply."""
         sent.append(kw["json"])
         return _ChatReply(next(replies))
 
@@ -294,9 +342,11 @@ def test_zero_shot_only_run_keeps_other_results(tmp_path, monkeypatch):
         {"model": "tfidf_logreg", "macro_f1": 0.7}, {"model": "zero_shot_llm", "skipped": "no key"}]}}))
 
     class FakeLLM:
+        """A zero-shot model that labels every aspect 'not mentioned'."""
         name, provider, model, parse_failures = "zero_shot_llm", "open", "qwen2.5:7b", 0
 
         def predict_proba(self, texts, stars=None):
+            """Always predict 'not mentioned' for every aspect."""
             return np.zeros((len(texts), len(ASPECTS), 3)) + np.array([1.0, 0, 0])
 
     sem = pd.DataFrame({"review_id": ["a", "b"], "stars": np.nan, "text": ["x", "y"], **{a: [0, 0] for a in ASPECTS}})
