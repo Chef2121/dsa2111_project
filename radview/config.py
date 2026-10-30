@@ -60,7 +60,7 @@ LABEL_NAMES = {LABEL_NONE: "not mentioned", LABEL_POS: "positive", LABEL_NEG: "n
 EWMA_SPAN = 3            # months; smoothing of the monthly complaint rate
 BASELINE_WINDOW = 12     # months of history used for the robust baseline
 SPIKE_Z = 2.5            # robust z-score above which an aspect is flagged
-SPIKE_MIN_MENTIONS = 2   # need at least this many negative mentions in the month
+SPIKE_MIN_MENTIONS = 2   # need at least this many negative mentions in the last two months
 
 # --------------------------------------------------------------------------
 # M4 - rating decline forecasting

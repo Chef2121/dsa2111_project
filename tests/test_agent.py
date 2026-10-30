@@ -13,11 +13,15 @@ pytestmark = pytest.mark.skipif(not (OUTPUTS_DIR / "risk_latest.parquet").exists
 
 @pytest.fixture(scope="module")
 def riskiest():
+    """The restaurant with the highest predicted risk: the agent's most important case."""
     from radview.m5_agent.tools import STORE
     return STORE.risk_latest.sort_values("risk").index[-1]
 
 
 def test_rule_based_plan_is_fully_grounded(riskiest):
+    """The deterministic planner's plan passes the verifier in full, its items are ranked 1..n and each has at
+    least one action.
+    """
     from radview.m5_agent.agent import generate_plan
 
     plan = generate_plan(riskiest, planner="rule_based", save=False)
@@ -42,6 +46,7 @@ def test_hallucinating_planner_is_completely_rejected(riskiest):
 
 
 def test_claude_planner_falls_back_without_credentials(riskiest, monkeypatch):
+    """Without Claude credentials, an LLM plan request falls back to the rule-based planner instead of failing."""
     from radview.m5_agent.agent import generate_plan
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -53,15 +58,19 @@ def test_claude_planner_falls_back_without_credentials(riskiest, monkeypatch):
 
 # ---------------------------------------------------------------- free open-model planner
 class _FakeResponse:
+    """Minimal stand-in for a requests.Response from an OpenAI-compatible chat server."""
     ok, status_code, text = True, 200, ""
 
     def __init__(self, payload):
+        """Wrap the JSON ``payload`` the fake server returns."""
         self.payload = payload
 
     def raise_for_status(self):
+        """Never raises: tests signal an error through ``ok`` / ``status_code`` instead."""
         pass
 
     def json(self):
+        """Return the stored payload."""
         return self.payload
 
 
@@ -90,6 +99,7 @@ def test_open_model_planner_uses_tools_and_is_verified(monkeypatch):
     aspect = aspects[0]
 
     def fake_post(url, **kw):
+        """Scripted server: first ask for evidence, then submit one real and one invented review claim."""
         tool_msgs = [m for m in kw["json"]["messages"] if m["role"] == "tool"]
         if not tool_msgs:
             return _reply("get_evidence_reviews", {"aspect": aspect})
@@ -121,6 +131,9 @@ def test_open_model_planner_retries_a_stuck_generation(riskiest, monkeypatch):
     temperatures = []
 
     def flaky_post(url, **kw):
+        """Fail the first request like Ollama's repetition abort (HTTP 500), then answer normally; records each
+        temperature.
+        """
         temperatures.append(kw["json"]["temperature"])
         if len(temperatures) == 1:
             resp = _FakeResponse({"error": {"message": "prediction aborted, token repeat limit reached"}})
@@ -135,12 +148,16 @@ def test_open_model_planner_retries_a_stuck_generation(riskiest, monkeypatch):
 
 
 def test_open_model_planner_falls_back_when_server_is_down(riskiest, monkeypatch):
+    """If the open-model server cannot be reached, the agent falls back to the rule-based planner and still returns
+    a fully grounded plan.
+    """
     import requests
 
     from radview.m5_agent import open_llm
     from radview.m5_agent.agent import generate_plan
 
     def refuse(url, **kw):
+        """Simulate a server that refuses the connection."""
         raise requests.ConnectionError("connection refused")
 
     monkeypatch.setattr(open_llm.requests, "post", refuse)

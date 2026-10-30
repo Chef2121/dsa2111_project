@@ -1,3 +1,5 @@
+# Kept out of the Docker build context: data and models (Yelp text; mounted as a volume instead), git
+# metadata, caches, documents, and the Kubernetes manifests, which are applied to the cluster, not built in.
 data/
 data_select*/
 .git/
