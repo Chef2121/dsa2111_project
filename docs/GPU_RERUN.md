@@ -46,7 +46,7 @@ Both zips contain Yelp review text: keep them within the group and delete them f
 ```bash
 export RADVIEW_DEVICE=cuda RADVIEW_SOURCE=yelp
 python -m radview.pipeline --from-processed            # M1 skipped (cuisine recomputed); M2 retrained at 256 tokens
-python -m radview.m4_forecast.train --test-end 2019-12   # pre-COVID robustness check (report Table VII)
+python -m radview.m4_forecast.train --test-end 2019-12   # pre-COVID robustness check (report Table XI)
 ```
 
 If the machine *does* have the raw Yelp files in `data/yelp/`, run `python -m radview.pipeline` instead.
@@ -73,8 +73,8 @@ See [DEPLOY_RONIN.md](DEPLOY_RONIN.md) for installing Ollama. Then:
 ```bash
 ollama pull qwen2.5:7b
 export RADVIEW_LLM_PROVIDER=open
-python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800   # M2 zero-shot baseline (Table IV)
-python -m radview.m5_agent.cli --compare 20                             # rule-based vs Qwen vs adversarial (Table VIII)
+python -m radview.m2_aspects.train --zero-shot-only --zero-shot-n 800   # M2 zero-shot baseline (Table VIII)
+python -m radview.m5_agent.cli --compare 20                             # rule-based vs Qwen vs adversarial (Table XIII)
 unset RADVIEW_LLM_PROVIDER
 ```
 
@@ -88,7 +88,11 @@ python -m pytest -q                                     # 43 tests; all should p
 ## 6. Bring the results back and stop the machine
 
 ```bash
-python docs/report/snapshot_inputs.py                   # copies the new metrics into docs/report/inputs/
+# copy the new metrics into docs/report/inputs/ (evaluation files only, no review text)
+I=docs/report/inputs; Y=data/work/yelp; R=data_select2016/work/yelp/outputs
+cp $Y/outputs/{m2_evaluation,m3_evaluation,m4_evaluation,m4_evaluation_test_end_2019-12,m5_evaluation,m5_planner_comparison,pipeline_run}.json $Y/outputs/m4_test_predictions.parquet $Y/processed/ingest_report.json $I/
+cp data/work/synthetic/outputs/m4_evaluation.json $I/m4_evaluation_synthetic.json
+for f in m2_evaluation m3_evaluation m4_evaluation m5_planner_comparison; do cp $R/$f.json $I/robust_select2016_$f.json; done
 zip -r results-after-fixes.zip data/work/yelp/outputs data/work/yelp/models/m2_selected.json \
     data/work/synthetic/outputs data_select2016/work/yelp/outputs docs/report/inputs docs/ROBUSTNESS_SELECTION.md
 ```
@@ -99,10 +103,9 @@ Download `results-after-fixes.zip` (and, if you want the retrained models, `data
 ```bash
 python scripts/make_results.py
 python scripts/export_test_outputs.py
-python docs/report/make_figures.py && python docs/report/build_report.py
 ```
 
-and update the numbers quoted in README.md and docs/FINDINGS.md (or ask Claude to do it from the new files).
+and update the numbers quoted in the report, README.md and docs/FINDINGS.md (or ask Claude to do it from the new files).
 
 ## What changed, so you know what to expect in the new numbers
 

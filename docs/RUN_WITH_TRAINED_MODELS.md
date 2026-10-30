@@ -150,16 +150,16 @@ Rebuilds `docs/RESULTS.md` from the outputs.
 
 ### e) Reproduce the report's tables
 
-Each table in the report comes from one command (fixed seeds, so the numbers match exactly):
+Each table in the report comes from one command (fixed seeds; training on a GPU can differ slightly between runs):
 
 | Report item | Command |
 |---|---|
-| Table VI + Fig. 5 (forecasting, COVID-era test) | `python -m radview.m4_forecast.train` |
-| Table VII (pre-COVID robustness check, ~2 min) | `python -m radview.m4_forecast.train --test-end 2019-12` |
-| Table VIII (planner comparison) | `python -m radview.m5_agent.cli --compare 20` |
-| Tables IV–V | already in the bundle: `data/work/yelp/outputs/m2_evaluation.json`, `m3_evaluation.json` |
+| Table X + Figs. 6–7 (forecasting, COVID-era test) | `python -m radview.m4_forecast.train` |
+| Table XI (pre-COVID robustness check, ~2 min) | `python -m radview.m4_forecast.train --test-end 2019-12` |
+| Table XIII (planner comparison) | `python -m radview.m5_agent.cli --compare 20` |
+| Tables VIII–IX (SemEval columns, M3) | already in the bundle: `data/work/yelp/outputs/m2_evaluation.json`, `m3_evaluation.json` |
 
-The report's figures and tables rebuild from the repo alone — see [`docs/report/README.md`](report/README.md).
+Where each table and figure comes from is listed in [`docs/report/README.md`](report/README.md).
 
 ---
 
