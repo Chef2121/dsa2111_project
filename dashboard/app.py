@@ -84,7 +84,10 @@ st.markdown(f"""
 .stApp h1, .stApp h2, .stApp h3, .stApp h4, [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
 [data-testid="stSidebarNav"] a span:not([data-testid="stIconMaterial"]) {{ font-family: {FONT}; }}
 .stApp p, .stApp li {{ color: {INK}; }}
-[data-testid="stDecoration"], #MainMenu, footer, [data-testid="stToolbar"] {{ display: none; }}
+/* Hide the toolbar's menu and deploy buttons, not the toolbar itself: it also holds the button that reopens a
+   collapsed sidebar (Streamlit collapses it on narrow windows), and hiding it left no way to open the sidebar. */
+[data-testid="stDecoration"], #MainMenu, footer, [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"] {{ display: none; }}
 [data-testid="stHeader"] {{ background: transparent; }}
 .block-container {{ padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1320px; }}
 .stApp h3 {{ font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; color: {INK}; }}
